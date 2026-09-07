@@ -1,0 +1,567 @@
+/* Palette values below are the dataviz reference instance, validated with
+   scripts/validate_palette.js. The five histogram steps pass the ordinal gates
+   in both modes (monotone lightness, >=0.06 step gaps, light end clears the
+   surface). Swap the hexes for a brand palette and re-run the validator. */
+
+:root {
+  color-scheme: light;
+
+  --plane: #f9f9f7;
+  --surface-1: #fcfcfb;
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted: #898781;
+  --grid-line: #e1e0d9;
+  --baseline: #c3c2b7;
+  --border: rgba(11, 11, 11, 0.1);
+
+  --accent: #2a78d6;
+
+  /* Ordinal ramp, light to dark as confusion rises. */
+  --step-0: #86b6ef;
+  --step-1: #5598e7;
+  --step-2: #2a78d6;
+  --step-3: #1c5cab;
+  --step-4: #104281;
+
+  /* Status palette is fixed, never themed. Always paired with a text label. */
+  --good: #0ca30c;
+  --warning: #fab219;
+  --serious: #ec835a;
+  --critical: #d03b3b;
+
+  --radius: 12px;
+  --font: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --plane: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted: #898781;
+    --grid-line: #2c2c2a;
+    --baseline: #383835;
+    --border: rgba(255, 255, 255, 0.1);
+    --accent: #3987e5;
+    /* Reversed on a dark ground so rising magnitude stays the more prominent
+       end; the darkest step still clears the ordinal 2:1 floor. */
+    --step-0: #b7d3f6;
+    --step-1: #86b6ef;
+    --step-2: #5598e7;
+    --step-3: #2a78d6;
+    --step-4: #184f95;
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --plane: #0d0d0d;
+  --surface-1: #1a1a19;
+  --text-primary: #ffffff;
+  --text-secondary: #c3c2b7;
+  --text-muted: #898781;
+  --grid-line: #2c2c2a;
+  --baseline: #383835;
+  --border: rgba(255, 255, 255, 0.1);
+  --accent: #3987e5;
+  --step-0: #b7d3f6;
+  --step-1: #86b6ef;
+  --step-2: #5598e7;
+  --step-3: #2a78d6;
+  --step-4: #184f95;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--plane);
+  color: var(--text-primary);
+  font-family: var(--font);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+.page {
+  min-height: 100vh;
+  padding: 24px 20px 64px;
+}
+.page.centred {
+  display: grid;
+  place-items: center;
+}
+.stack {
+  width: 100%;
+  max-width: 560px;
+  margin: 0 auto;
+  display: grid;
+  gap: 20px;
+}
+.page.wide .stack {
+  max-width: 900px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.row.spread {
+  justify-content: space-between;
+}
+.grid {
+  display: grid;
+  gap: 20px;
+  grid-template-columns: 1fr;
+}
+@media (min-width: 760px) {
+  .grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+h1 {
+  font-size: 24px;
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+h2 {
+  font-size: 15px;
+  margin: 0 0 10px;
+}
+.sub {
+  color: var(--text-secondary);
+  margin: 6px 0 0;
+}
+.hint {
+  color: var(--text-muted);
+  font-size: 13px;
+  margin: 12px 0 0;
+}
+.error {
+  color: var(--critical);
+  font-size: 13px;
+  margin: 10px 0 0;
+}
+.empty {
+  color: var(--text-muted);
+  font-size: 13px;
+  margin: 20px 0;
+  text-align: center;
+}
+
+.label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.card {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+}
+
+.room-code {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.08em;
+}
+.room-code.big {
+  font-size: 32px;
+}
+
+.conn {
+  font-size: 12px;
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.conn::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+.conn[data-on="true"]::before {
+  background: var(--good);
+}
+
+/* ---- Buttons and inputs ---- */
+
+.btn {
+  font: inherit;
+  font-weight: 600;
+  padding: 10px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface-1);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.btn:hover:not(:disabled) {
+  border-color: var(--baseline);
+}
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.btn-ghost {
+  background: transparent;
+}
+
+.input {
+  font: inherit;
+  flex: 1;
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--plane);
+  color: var(--text-primary);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* ---- The slider ---- */
+
+.slider {
+  --pct: 0%;
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 44px;
+  margin: 18px 0 4px;
+  background: transparent;
+  cursor: pointer;
+}
+.slider::-webkit-slider-runnable-track {
+  height: 10px;
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    var(--accent) var(--pct),
+    color-mix(in srgb, var(--accent) 16%, var(--surface-1)) var(--pct)
+  );
+}
+.slider::-moz-range-track {
+  height: 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 16%, var(--surface-1));
+}
+.slider::-moz-range-progress {
+  height: 10px;
+  border-radius: 999px;
+  background: var(--accent);
+}
+.slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 28px;
+  height: 28px;
+  margin-top: -9px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 3px solid var(--surface-1);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+}
+.slider::-moz-range-thumb {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 3px solid var(--surface-1);
+}
+.slider:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+
+.own-value {
+  font-size: 22px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.axis-note {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* ---- Meter: hero figure plus track ---- */
+
+.meter-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.meter-band {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 600;
+  /* Text never wears the data colour; the dot beside it carries identity. */
+  color: var(--text-secondary);
+}
+.meter-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+.meter-band[data-status="good"] .meter-dot {
+  background: var(--good);
+}
+.meter-band[data-status="warning"] .meter-dot {
+  background: var(--warning);
+}
+.meter-band[data-status="serious"] .meter-dot {
+  background: var(--serious);
+}
+.meter-band[data-status="critical"] .meter-dot {
+  background: var(--critical);
+}
+
+.hero {
+  /* Proportional figures: tabular-nums reads loose at display sizes. */
+  font-size: 56px;
+  font-weight: 600;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  margin: 10px 0 14px;
+}
+.hero-unit {
+  font-size: 17px;
+  font-weight: 500;
+  color: var(--text-muted);
+  margin-left: 8px;
+}
+
+.meter-track {
+  --meter: var(--text-muted);
+  height: 12px;
+  border-radius: 999px;
+  overflow: hidden;
+  /* Unfilled track is a lighter step of the fill's own ramp. */
+  background: color-mix(in srgb, var(--meter) 18%, var(--surface-1));
+}
+.meter-track[data-status="good"] {
+  --meter: var(--good);
+}
+.meter-track[data-status="warning"] {
+  --meter: var(--warning);
+}
+.meter-track[data-status="serious"] {
+  --meter: var(--serious);
+}
+.meter-track[data-status="critical"] {
+  --meter: var(--critical);
+}
+.meter-fill {
+  height: 100%;
+  background: var(--meter);
+  transition: width 220ms ease-out;
+}
+
+.meter-foot {
+  color: var(--text-secondary);
+  font-size: 13px;
+  margin: 10px 0 0;
+}
+
+/* ---- Histogram ---- */
+
+.panel {
+  margin: 0;
+}
+.hist {
+  margin: 18px 0 8px;
+}
+.hist-plots {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  height: 190px;
+  /* One continuous axis under the whole plot, not a segment per column. */
+  border-bottom: 1px solid var(--baseline);
+}
+.hist-col {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  position: relative;
+  outline: none;
+}
+.hist-col:focus-visible .hist-bar {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.hist-bar {
+  width: 100%;
+  /* 4px rounded data-end, square where it meets the baseline. */
+  border-radius: 4px 4px 0 0;
+  background: var(--step-0);
+  transition: height 220ms ease-out;
+  min-height: 2px;
+}
+.hist-bar[data-step="1"] {
+  background: var(--step-1);
+}
+.hist-bar[data-step="2"] {
+  background: var(--step-2);
+}
+.hist-bar[data-step="3"] {
+  background: var(--step-3);
+}
+.hist-bar[data-step="4"] {
+  background: var(--step-4);
+}
+.hist-ticks {
+  display: flex;
+  gap: 10px;
+  margin-top: 8px;
+}
+.hist-ticks span {
+  flex: 1;
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.hist-value {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Sparkline ---- */
+
+.spark-wrap {
+  position: relative;
+  margin-top: 16px;
+}
+.spark {
+  width: 100%;
+  height: auto;
+  display: block;
+  overflow: visible;
+}
+.spark-grid {
+  /* Hairline, solid, recessive. */
+  stroke: var(--grid-line);
+  stroke-width: 1;
+}
+.spark-area {
+  /* A wash, never a saturated block. */
+  fill: var(--accent);
+  opacity: 0.1;
+}
+.spark-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.crosshair {
+  stroke: var(--baseline);
+  stroke-width: 1;
+}
+.spark-dot {
+  fill: var(--accent);
+}
+.spark-dot-ring {
+  /* 2px surface ring keeps the marker legible over the line. */
+  fill: var(--surface-1);
+}
+
+/* ---- Tooltips ---- */
+
+.tip {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translate(-50%, -8px);
+  background: var(--surface-1);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-size: 12px;
+  white-space: nowrap;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.14);
+  pointer-events: none;
+  z-index: 2;
+}
+.tip-float {
+  bottom: auto;
+  top: -6px;
+}
+.tip-sub {
+  display: block;
+  color: var(--text-muted);
+}
+
+/* ---- Table view: the non-colour channel ---- */
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 14px;
+  font-size: 14px;
+}
+.table th,
+.table td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.table thead th {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+.table td,
+.table tbody th {
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
