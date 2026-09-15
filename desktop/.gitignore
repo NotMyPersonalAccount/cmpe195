@@ -1,12 +1,10 @@
-__pycache__/
-*.py[cod]
-.venv/
-.pytest_cache/
 node_modules/
 dist/
 out/
 release/
 .env
+.env.*
 *.tsbuildinfo
 *.sqlite
 *.sqlite-journal
+.DS_Store
