@@ -1,0 +1,32 @@
+appId: edu.sjsu.catch
+productName: Catch
+directories:
+  buildResources: build
+files:
+  - '!**/.vscode/*'
+  - '!src/*'
+  - '!electron.vite.config.{js,ts,mjs,cjs}'
+  - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json,vitest.config.ts}'
+  - '!{README.md,.gitignore}'
+asarUnpack:
+  - resources/**
+extraResources:
+  - from: node_modules/sql.js/dist/sql-wasm.wasm
+    to: sql-wasm.wasm
+win:
+  executableName: Catch
+mac:
+  entitlementsInherit: build/entitlements.mac.plist
+  extendInfo:
+    NSMicrophoneUsageDescription: Catch records lectures from your microphone so it can transcribe them and build a to-do list on this computer.
+    NSDocumentsFolderUsageDescription: Catch stores recordings and transcripts in its application data folder on this computer.
+  notarize: false
+  category: public.app-category.education
+  target:
+    - dmg
+    - zip
+linux:
+  target:
+    - AppImage
+  category: Education
+npmRebuild: false

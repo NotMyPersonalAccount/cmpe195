@@ -1,3 +1,14 @@
+# CMPE 195
+
+Two apps live in this repo as sibling folders, not separate branches:
+
+| App | Folder | What it is |
+|---|---|---|
+| Confusion Level | `frontend/` + `backend/` | Live lecture “how lost is the room” slider |
+| Catch | [`desktop/`](desktop/) | Laptop recorder → local transcript → to-do list |
+
+Catch is a desktop Electron app. Confusion Level is the web/Redis service described below.
+
 # Confusion Level
 
 A live read on how lost a lecture room is. Students drag a 0–100 slider on their
