@@ -5,10 +5,18 @@ import { useState } from 'react'
 type Props = {
   tasks: Task[]
   disabled: boolean
+  canRebuild?: boolean
+  onRebuild?: () => void
   onChange: (tasks: Task[]) => void
 }
 
-export function TaskList({ tasks, disabled, onChange }: Props): React.JSX.Element {
+export function TaskList({
+  tasks,
+  disabled,
+  canRebuild = false,
+  onRebuild,
+  onChange
+}: Props): React.JSX.Element {
   const [draft, setDraft] = useState('')
 
   function update(id: string, patch: Partial<Task>): void {
@@ -45,7 +53,22 @@ export function TaskList({ tasks, disabled, onChange }: Props): React.JSX.Elemen
     <section className="panel">
       <header className="panel-head">
         <h2>To-do list</h2>
-        <span className="pill">{tasks.filter((task) => task.completed).length}/{tasks.length} done</span>
+        <div className="head-actions">
+          <span className="pill">
+            {tasks.filter((task) => task.completed).length}/{tasks.length} done
+          </span>
+          {onRebuild ? (
+            <button
+              type="button"
+              className="btn small"
+              onClick={onRebuild}
+              disabled={disabled || !canRebuild}
+              title="Read the transcript again and rebuild this list"
+            >
+              Rebuild from transcript
+            </button>
+          ) : null}
+        </div>
       </header>
 
       {tasks.length === 0 ? (

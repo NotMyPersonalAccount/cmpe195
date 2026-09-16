@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { Recording, RecordingSummary, StorageInfo, Task } from '@shared/types'
+import type { Recording, RecordingSummary, StorageInfo } from '@shared/types'
 import { defaultTitle } from '@shared/format'
 import { extractTasks } from '@shared/extractTasks'
+import { buildTasks } from '@shared/buildTasks'
 import { ConsentModal } from './components/ConsentModal'
 import { PrivacyPanel } from './components/PrivacyPanel'
 import { HistoryList } from './components/HistoryList'
@@ -62,6 +63,12 @@ export default function App(): React.JSX.Element {
 
   const persist = useCallback(
     async (recording: Recording, extra?: Partial<Recording>) => {
+      // A queued autosave holds an older copy of this recording, so let the
+      // explicit write win instead of being overwritten a moment later.
+      if (saveTimer.current) {
+        window.clearTimeout(saveTimer.current)
+        saveTimer.current = null
+      }
       const next: Recording = { ...recording, ...extra }
       const saved = await window.api.updateRecording({
         id: next.id,
@@ -96,19 +103,7 @@ export default function App(): React.JSX.Element {
     try {
       const pcm = await decodeTo16k(blob)
       const text = await transcribe(pcm, setProcessingMessage)
-      const extracted = extractTasks(text, new Date(recording.createdAt))
-      const now = Date.now()
-      const tasks: Task[] = extracted.map((item, index) => ({
-        id: crypto.randomUUID(),
-        recordingId: recording.id,
-        description: item.description,
-        deadlineIso: item.deadlineIso,
-        deadlineLabel: item.deadlineLabel,
-        completed: false,
-        sortOrder: index,
-        createdAt: now,
-        updatedAt: now
-      }))
+      const tasks = buildTasks(extractTasks(text, new Date(recording.createdAt)), recording.id)
       await persist(recording, {
         transcript: text,
         status: 'ready',
@@ -208,6 +203,28 @@ export default function App(): React.JSX.Element {
     const blob = new Blob([audio.data], { type: audio.mime })
     await persist(selected, { status: 'processing', errorMessage: null })
     await processAudio(selected, blob)
+  }
+
+  async function rebuildTasks(): Promise<void> {
+    if (!selected) return
+    const transcript = selected.transcript.trim()
+    if (!transcript) return
+
+    if (selected.tasks.length > 0) {
+      const ok = window.confirm(
+        'Rebuild the to-do list from the transcript? Tasks you typed or edited by hand will be replaced. Anything you already checked off stays checked if it comes back.'
+      )
+      if (!ok) return
+    }
+
+    const extracted = extractTasks(transcript, new Date(selected.createdAt))
+    const tasks = buildTasks(extracted, selected.id, selected.tasks)
+    await persist(selected, { tasks })
+    setBanner(
+      tasks.length
+        ? `Rebuilt from the transcript: ${tasks.length} task${tasks.length === 1 ? '' : 's'}.`
+        : 'No action items found in this transcript. You can add them yourself.'
+    )
   }
 
   async function saveNow(): Promise<void> {
@@ -331,6 +348,8 @@ export default function App(): React.JSX.Element {
           <TaskList
             tasks={selected?.tasks ?? []}
             disabled={!selected || recStatus !== 'idle' || selected.status === 'processing'}
+            canRebuild={Boolean(selected && selected.status === 'ready' && selected.transcript.trim())}
+            onRebuild={() => void rebuildTasks()}
             onChange={(tasks) => {
               if (!selected) return
               const next = { ...selected, tasks }

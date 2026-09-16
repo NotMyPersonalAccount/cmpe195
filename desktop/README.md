@@ -10,6 +10,7 @@ It cannot reconstruct a class that already happened. The point is to press recor
 - Transcribes locally with a Whisper model that runs in the app
 - Pulls assignments, action items, and deadlines out of the transcript
 - Lets you edit, check off, add, and delete tasks
+- Rebuilds the list from the transcript after you correct a misheard word
 - Saves recordings, transcripts, and tasks in SQLite plus local audio files
 - Opens previous recordings from history and deletes them when you are done
 

@@ -298,6 +298,18 @@ button {
   gap: 12px;
 }
 
+.head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn.small {
+  min-height: 34px;
+  padding: 6px 12px;
+  font-size: 0.85rem;
+}
+
 .pill {
   font-size: 0.75rem;
   color: var(--ink-soft);
