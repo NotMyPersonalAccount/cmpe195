@@ -77,10 +77,10 @@ async function handle(message: Extract<Incoming, { type: 'transcribe' }>): Promi
     const model = await loadModel()
     if (!live) postMessage({ type: 'progress', message: 'Transcribing on this computer…' })
 
+    // whisper-tiny.en is English-only, and transformers.js rejects `language`
+    // or `task` on such a model rather than ignoring them.
     const result = await model(new Float32Array(audio), {
       sampling_rate: sampleRate,
-      language: 'english',
-      task: 'transcribe',
       return_timestamps: !live,
       chunk_length_s: 30,
       stride_length_s: 5

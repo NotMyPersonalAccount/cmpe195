@@ -133,8 +133,13 @@ function cleanDescription(text: string): string {
       .replace(/^(ok(ay)?|so|um+|uh+|alright|all right|now|anyway|also|and|well),?\s+/i, '')
       .replace(/^(hey|everyone|class|folks|guys),?\s+/i, '')
       .replace(/^(remember|please),?\s+/i, '')
+      .replace(
+        /^(before i forget|quick reminder|just a reminder|as a reminder|a reminder|reminder|one more thing|last thing|first of all|finally)[,.:]?\s+/i,
+        ''
+      )
       .replace(/^(you (need to|have to|should|must|will need to)|you're going to need to|you are going to need to)\s+/i, '')
-      .replace(/^(i want you( all)? to|make sure( you| to)?|don't forget to|do not forget to|remember to|be sure to)\s+/i, '')
+      .replace(/^(i|we) (also |really |just )?(want|need) (you|everyone)( all)? to\s+/i, '')
+      .replace(/^(make sure( you| to)?|don't forget to|do not forget to|remember to|be sure to)\s+/i, '')
       .replace(/^(the homework is to|your homework is to|the assignment is to)\s+/i, '')
   }
 
@@ -167,6 +172,13 @@ function parseDeadline(text: string, recordedAt: Date): DeadlineHit | null {
 
   const endWeek = exec(/\bend of (the )?week\b/i, lower)
   if (endWeek) push(endWeek, toIso(upcomingWeekday(recordedAt, 5)))
+
+  const nextWeekend = exec(/\bnext weekend\b/i, lower)
+  if (nextWeekend) push(nextWeekend, toIso(weekdayOnWeek(recordedAt, 6, 1)))
+  else {
+    const weekend = exec(/\b(this |the |over the )?weekend\b/i, lower)
+    if (weekend) push(weekend, toIso(upcomingWeekday(recordedAt, 6)))
+  }
 
   const nextWeekday = new RegExp(`\\bnext (${WEEKDAY_RE})\\b`, 'i')
   let match: RegExpExecArray | null

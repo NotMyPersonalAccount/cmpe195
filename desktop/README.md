@@ -30,6 +30,22 @@ npm run dev
 
 macOS will ask for microphone access the first time you record. If the recording is silent, check System Settings → Privacy & Security → Microphone.
 
+## Check the pipeline without a microphone
+
+Transcription and task extraction can be exercised end to end from the command
+line, which is faster than re-recording every time you change the extractor:
+
+```bash
+say -f scripts/lecture.txt -o /tmp/lecture.aiff
+afconvert -f WAVE -d LEI16@16000 -c 1 /tmp/lecture.aiff /tmp/lecture.wav
+node --experimental-strip-types scripts/check-pipeline.ts /tmp/lecture.wav
+```
+
+It replays the file the way the audio worklet feeds the app while recording, so
+it reports the same segmentation the live path uses, both transcripts side by
+side, the tasks each produces, and how far ahead of realtime the machine runs.
+Point it at any WAV to test a real lecture instead of a synthesised one.
+
 ## Build an installer
 
 ```bash

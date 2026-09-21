@@ -1,0 +1,8 @@
+Okay everyone, let's get started. Today we're going to talk about graph traversal and shortest paths.
+Before I forget, please submit the assignment by Friday. It goes in the course dropbox, not by email.
+I also want you to read chapter four over the weekend. It covers Dijkstra's algorithm and we will build on it.
+Study for the exam next week. It covers everything from the first five lectures.
+Are there any questions so far?
+One more thing. Upload the project proposal by September twenty second.
+And if you are stuck on the lab, meet with the professor tomorrow during office hours.
+That's all for today. See you Thursday.

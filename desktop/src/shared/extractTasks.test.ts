@@ -41,6 +41,24 @@ describe('extractTasks', () => {
     expect(tasks[0].description).toMatch(/submit the assignment/i)
   })
 
+  it('strips the lead-in so the task reads like a to-do', () => {
+    const transcript = [
+      'Before I forget, please submit the assignment by Friday.',
+      'I also want you to read chapter 4.',
+      'One more thing: upload the project proposal.'
+    ].join(' ')
+
+    const descriptions = extractTasks(transcript, tuesday).map((task) => task.description)
+    expect(descriptions).toContain('Submit the assignment by Friday')
+    expect(descriptions).toContain('Read chapter 4')
+    expect(descriptions).toContain('Upload the project proposal')
+  })
+
+  it('reads the weekend as the coming Saturday', () => {
+    const [task] = extractTasks('Read chapter 4 over the weekend.', tuesday)
+    expect(task.deadlineIso).toBe('2026-09-19')
+  })
+
   it('pulls numbered homework lists', () => {
     const transcript = [
       'Your homework is:',
