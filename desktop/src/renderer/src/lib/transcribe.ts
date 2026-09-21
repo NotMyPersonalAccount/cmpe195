@@ -38,15 +38,27 @@ function ensureWorker(): Worker {
   return worker
 }
 
-export function transcribe(audio: Float32Array, onProgress?: TranscribeProgress): Promise<string> {
+/** Starts the model download before the first segment needs it. */
+export function warmUpModel(): void {
+  ensureWorker().postMessage({ type: 'warmup' })
+}
+
+export function transcribe(
+  audio: Float32Array,
+  onProgress?: TranscribeProgress,
+  live = false
+): Promise<string> {
   const id = ++requestId
   const target = ensureWorker()
 
   return new Promise((resolve, reject) => {
     pending.set(id, { resolve, reject, onProgress })
-    onProgress?.('Starting local transcription…')
+    if (!live) onProgress?.('Starting local transcription…')
     const copy = audio.slice()
-    target.postMessage({ type: 'transcribe', requestId: id, audio: copy.buffer, sampleRate: 16000 }, [copy.buffer])
+    target.postMessage(
+      { type: 'transcribe', requestId: id, audio: copy.buffer, sampleRate: 16000, live },
+      [copy.buffer]
+    )
   })
 }
 

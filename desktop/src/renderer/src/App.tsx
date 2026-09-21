@@ -13,12 +13,14 @@ import { AudioPlayer } from './components/AudioPlayer'
 import { MicRecorder } from './lib/recorder'
 import { decodeTo16k } from './lib/audio'
 import { transcribe } from './lib/transcribe'
+import { LiveTranscriber } from './lib/liveTranscriber'
 
 type RecStatus = 'idle' | 'recording' | 'processing'
 
 export default function App(): React.JSX.Element {
   const recorderRef = useRef(new MicRecorder())
   const saveTimer = useRef<number | null>(null)
+  const liveRef = useRef<LiveTranscriber | null>(null)
 
   const [ready, setReady] = useState(false)
   const [consentNeeded, setConsentNeeded] = useState(false)
@@ -32,17 +34,23 @@ export default function App(): React.JSX.Element {
   const [banner, setBanner] = useState<string | null>(null)
   const [titleDraft, setTitleDraft] = useState('')
   const [savedFlash, setSavedFlash] = useState(false)
+  const [liveEnabled, setLiveEnabled] = useState(true)
+  const [liveText, setLiveText] = useState('')
+  const [liveQueued, setLiveQueued] = useState(0)
+  const [liveNote, setLiveNote] = useState<string | null>(null)
 
   const locked = recStatus === 'recording'
 
   useEffect(() => {
     async function boot(): Promise<void> {
-      const [consent, info, list] = await Promise.all([
+      const [consent, live, info, list] = await Promise.all([
         window.api.getSetting('consentAccepted'),
+        window.api.getSetting('liveTranscript'),
         window.api.storageInfo(),
         window.api.listRecordings()
       ])
       setConsentNeeded(consent !== 'true')
+      setLiveEnabled(live !== 'false')
       setStorage(info)
       setSummaries(list)
       if (list[0]) {
@@ -97,12 +105,15 @@ export default function App(): React.JSX.Element {
     [persist]
   )
 
-  async function processAudio(recording: Recording, blob: Blob): Promise<void> {
+  async function processAudio(recording: Recording, blob: Blob, knownText?: string): Promise<void> {
     setRecStatus('processing')
-    setProcessingMessage('Preparing audio…')
+    setProcessingMessage(knownText ? 'Building your to-do list…' : 'Preparing audio…')
     try {
-      const pcm = await decodeTo16k(blob)
-      const text = await transcribe(pcm, setProcessingMessage)
+      let text = knownText?.trim() ?? ''
+      if (!text) {
+        const pcm = await decodeTo16k(blob)
+        text = await transcribe(pcm, setProcessingMessage)
+      }
       const tasks = buildTasks(extractTasks(text, new Date(recording.createdAt)), recording.id)
       await persist(recording, {
         transcript: text,
@@ -128,24 +139,49 @@ export default function App(): React.JSX.Element {
       setBanner('Microphone access is off. Enable it in System Settings, then try again.')
       return
     }
+    setLiveText('')
+    setLiveQueued(0)
+    setLiveNote(null)
+
+    const recorder = recorderRef.current
+    if (liveEnabled) {
+      const live = new LiveTranscriber()
+      live.onUpdate = (state) => {
+        setLiveText(state.text)
+        setLiveQueued(state.queued)
+        setLiveNote(state.note)
+      }
+      liveRef.current = live
+      recorder.onPcm = (samples) => live.push(samples)
+    } else {
+      liveRef.current = null
+      recorder.onPcm = undefined
+    }
+
     try {
-      await recorderRef.current.start()
+      await recorder.start()
       setElapsedMs(0)
       setRecStatus('recording')
       setSelected(null)
       setTitleDraft(defaultTitle())
     } catch (error) {
+      liveRef.current?.cancel()
+      liveRef.current = null
       const message = error instanceof Error ? error.message : 'Could not start the microphone.'
       setBanner(message)
     }
   }
 
   async function stopRecording(): Promise<void> {
+    const live = liveRef.current
     try {
       const { blob, durationMs, mime } = await recorderRef.current.stop()
       if (blob.size < 1000) {
+        live?.cancel()
+        liveRef.current = null
         setRecStatus('idle')
         setElapsedMs(0)
+        setLiveText('')
         setBanner('That recording was empty. Try again closer to the speaker.')
         return
       }
@@ -159,8 +195,20 @@ export default function App(): React.JSX.Element {
       setSelected(created)
       setTitleDraft(created.title)
       setSummaries(await window.api.listRecordings())
-      await processAudio(created, blob)
+
+      // Most of the lecture is already transcribed by now; only the tail after
+      // the last pause is still in flight.
+      let text = ''
+      if (live) {
+        setRecStatus('processing')
+        setProcessingMessage('Finishing the last few seconds…')
+        text = await live.finish()
+        liveRef.current = null
+      }
+      await processAudio(created, blob, text)
     } catch (error) {
+      live?.cancel()
+      liveRef.current = null
       recorderRef.current.cancel()
       setRecStatus('idle')
       setElapsedMs(0)
@@ -169,10 +217,20 @@ export default function App(): React.JSX.Element {
   }
 
   function cancelRecording(): void {
+    liveRef.current?.cancel()
+    liveRef.current = null
     recorderRef.current.cancel()
     setRecStatus('idle')
     setElapsedMs(0)
+    setLiveText('')
+    setLiveQueued(0)
+    setLiveNote(null)
     setBanner('Recording discarded.')
+  }
+
+  async function toggleLive(next: boolean): Promise<void> {
+    setLiveEnabled(next)
+    await window.api.setSetting('liveTranscript', next ? 'true' : 'false')
   }
 
   async function selectRecording(id: string): Promise<void> {
@@ -199,6 +257,12 @@ export default function App(): React.JSX.Element {
 
   async function retrySelected(): Promise<void> {
     if (!selected) return
+    if (selected.status === 'ready' && selected.transcript.trim()) {
+      const ok = window.confirm(
+        'Transcribe this recording again from the saved audio? A full pass hears the whole lecture at once and is usually more accurate than the live one, but it takes longer. Your current transcript and tasks will be replaced.'
+      )
+      if (!ok) return
+    }
     const audio = await window.api.getAudio(selected.id)
     const blob = new Blob([audio.data], { type: audio.mime })
     await persist(selected, { status: 'processing', errorMessage: null })
@@ -286,6 +350,9 @@ export default function App(): React.JSX.Element {
           status={recStatus}
           elapsedMs={elapsedMs}
           processingMessage={processingMessage}
+          liveEnabled={liveEnabled}
+          liveQueued={liveQueued}
+          onToggleLive={(next) => void toggleLive(next)}
           onStart={() => void startRecording()}
           onStop={() => void stopRecording()}
           onCancel={cancelRecording}
@@ -337,7 +404,12 @@ export default function App(): React.JSX.Element {
             status={panelStatus}
             errorMessage={selected?.errorMessage ?? null}
             processingMessage={processingMessage}
+            liveEnabled={liveEnabled}
+            liveText={liveText}
+            liveQueued={liveQueued}
+            liveNote={liveNote}
             onRetry={selected ? () => void retrySelected() : undefined}
+            onReTranscribe={selected ? () => void retrySelected() : undefined}
             onChange={(value) => {
               if (!selected) return
               const next = { ...selected, transcript: value }

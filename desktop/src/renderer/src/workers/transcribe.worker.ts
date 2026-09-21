@@ -2,12 +2,9 @@
 
 import { env, pipeline } from '@huggingface/transformers'
 
-type Incoming = {
-  type: 'transcribe'
-  requestId: number
-  audio: ArrayBuffer
-  sampleRate: number
-}
+type Incoming =
+  | { type: 'warmup' }
+  | { type: 'transcribe'; requestId: number; audio: ArrayBuffer; sampleRate: number; live?: boolean }
 
 type Transcriber = (
   audio: Float32Array,
@@ -21,6 +18,11 @@ const wasm = env.backends.onnx?.wasm
 if (wasm) wasm.numThreads = 1
 
 let transcriber: Transcriber | null = null
+let loading: Promise<Transcriber> | null = null
+
+// One model, one GPU/WASM session: overlapping calls would contend for it and
+// arrive out of order, which for live transcription means scrambled sentences.
+let chain: Promise<void> = Promise.resolve()
 
 function onProgress(info: { status?: string; progress?: number }): void {
   if (info.status === 'progress' && typeof info.progress === 'number') {
@@ -38,48 +40,57 @@ function onProgress(info: { status?: string; progress?: number }): void {
   }
 }
 
-async function loadModel(): Promise<Transcriber> {
-  if (transcriber) return transcriber
+function loadModel(): Promise<Transcriber> {
+  if (transcriber) return Promise.resolve(transcriber)
+  if (loading) return loading
 
   const options = {
     dtype: 'q8' as const,
     progress_callback: onProgress
   }
 
-  try {
-    transcriber = (await pipeline('automatic-speech-recognition', 'Xenova/whisper-tiny.en', {
-      ...options,
-      device: 'webgpu'
-    })) as unknown as Transcriber
-  } catch {
-    transcriber = (await pipeline(
-      'automatic-speech-recognition',
-      'Xenova/whisper-tiny.en',
-      options
-    )) as unknown as Transcriber
-  }
+  loading = (async () => {
+    try {
+      transcriber = (await pipeline('automatic-speech-recognition', 'Xenova/whisper-tiny.en', {
+        ...options,
+        device: 'webgpu'
+      })) as unknown as Transcriber
+    } catch {
+      transcriber = (await pipeline(
+        'automatic-speech-recognition',
+        'Xenova/whisper-tiny.en',
+        options
+      )) as unknown as Transcriber
+    }
+    return transcriber
+  })()
 
-  return transcriber
+  return loading
 }
 
-self.onmessage = async (event: MessageEvent<Incoming>) => {
-  const { requestId, audio, sampleRate } = event.data
+async function handle(message: Extract<Incoming, { type: 'transcribe' }>): Promise<void> {
+  const { requestId, audio, sampleRate, live } = message
   try {
-    postMessage({ type: 'progress', message: 'Loading local speech model…' })
+    if (!transcriber && !live) {
+      postMessage({ type: 'progress', message: 'Loading local speech model…' })
+    }
     const model = await loadModel()
-    postMessage({ type: 'progress', message: 'Transcribing on this computer…' })
+    if (!live) postMessage({ type: 'progress', message: 'Transcribing on this computer…' })
 
     const result = await model(new Float32Array(audio), {
       sampling_rate: sampleRate,
       language: 'english',
       task: 'transcribe',
-      return_timestamps: true,
+      return_timestamps: !live,
       chunk_length_s: 30,
       stride_length_s: 5
     })
 
     const text = Array.isArray(result)
-      ? result.map((item) => item.text?.trim()).filter(Boolean).join(' ')
+      ? result
+          .map((item) => item.text?.trim())
+          .filter(Boolean)
+          .join(' ')
       : (result.text ?? '').trim()
 
     postMessage({ type: 'done', requestId, text })
@@ -90,4 +101,15 @@ self.onmessage = async (event: MessageEvent<Incoming>) => {
         : 'Transcription failed. Connect to the internet once to download the local speech model.'
     postMessage({ type: 'error', requestId, message })
   }
+}
+
+self.onmessage = (event: MessageEvent<Incoming>) => {
+  const data = event.data
+  if (data.type === 'warmup') {
+    void loadModel().catch(() => {
+      // A failed warmup is retried by the first real segment.
+    })
+    return
+  }
+  chain = chain.then(() => handle(data))
 }

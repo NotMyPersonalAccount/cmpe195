@@ -8,6 +8,22 @@ export async function decodeTo16k(blob: Blob): Promise<Float32Array> {
   }
 }
 
+export function resampleChunk(samples: Float32Array, fromRate: number, toRate: number): Float32Array {
+  if (fromRate === toRate || samples.length === 0) return samples
+
+  const outLength = Math.max(1, Math.round((samples.length * toRate) / fromRate))
+  const output = new Float32Array(outLength)
+  const ratio = samples.length / outLength
+  for (let i = 0; i < outLength; i++) {
+    const position = i * ratio
+    const left = Math.floor(position)
+    const right = Math.min(left + 1, samples.length - 1)
+    const mix = position - left
+    output[i] = samples[left] * (1 - mix) + samples[right] * mix
+  }
+  return output
+}
+
 export function resampleMono(buffer: AudioBuffer, targetRate: number): Float32Array {
   const frames = buffer.length
   const channels = buffer.numberOfChannels

@@ -7,7 +7,8 @@ It cannot reconstruct a class that already happened. The point is to press recor
 ## What it does
 
 - Records from the laptop microphone, with a timer and a clear “microphone is on” state
-- Transcribes locally with a Whisper model that runs in the app
+- Transcribes locally with a Whisper model that runs in the app, live while you record
+- Runs a slower, more accurate pass over the saved audio on request
 - Pulls assignments, action items, and deadlines out of the transcript
 - Lets you edit, check off, add, and delete tasks
 - Rebuilds the list from the transcript after you correct a misheard word
@@ -50,4 +51,6 @@ The packaged app still processes audio on the machine it is installed on. Data l
 
 ## Limits
 
-This is an MVP. It does not do live captions, speaker labels, cloud sync, calendar reminders, or “what happened in the last 15 seconds.” Task extraction is useful, not perfect — edit anything it gets wrong.
+This is an MVP. It does not do speaker labels, cloud sync, calendar reminders, or “what happened in the last 15 seconds.” Task extraction is useful, not perfect — edit anything it gets wrong.
+
+Live transcript trades some accuracy for speed. It cuts the audio at pauses and transcribes each piece without the surrounding context, so a word split across a cut can come out wrong. When a transcript matters, press **Transcribe again** to re-run the whole recording in one pass, then **Rebuild from transcript** to redo the tasks. Turn the live toggle off to skip straight to the slower, better pass.
