@@ -81,6 +81,7 @@ export default function App(): React.JSX.Element {
       const saved = await window.api.updateRecording({
         id: next.id,
         title: next.title,
+        isBookmarked: next.isBookmarked,
         transcript: next.transcript,
         status: next.status,
         errorMessage: next.errorMessage,
@@ -255,6 +256,25 @@ export default function App(): React.JSX.Element {
     }
   }
 
+  async function toggleBookmark(id: string): Promise<void> {
+    const recording = selected?.id === id ? selected : await window.api.getRecording(id)
+    if (!recording) return
+    if (recording.id === selected?.id && saveTimer.current) {
+      window.clearTimeout(saveTimer.current)
+      saveTimer.current = null
+    }
+    const saved = await window.api.updateRecording({
+      id: recording.id,
+      isBookmarked: !recording.isBookmarked
+    })
+    if (saved.id === selected?.id) {
+      setSelected(saved)
+      setTitleDraft(saved.title)
+    }
+    setSummaries(await window.api.listRecordings())
+    setBanner(saved.isBookmarked ? 'Bookmark added.' : 'Bookmark removed.')
+  }
+
   async function retrySelected(): Promise<void> {
     if (!selected) return
     if (selected.status === 'ready' && selected.transcript.trim()) {
@@ -332,6 +352,7 @@ export default function App(): React.JSX.Element {
         selectedId={selected?.id ?? null}
         recordingLocked={locked}
         onSelect={(id) => void selectRecording(id)}
+        onToggleBookmark={(id) => void toggleBookmark(id)}
         onDelete={(id) => void deleteRecording(id)}
       />
 
@@ -384,6 +405,17 @@ export default function App(): React.JSX.Element {
           >
             {savedFlash ? 'Saved' : 'Save'}
           </button>
+          {selected ? (
+            <button
+              type="button"
+              className={`btn ghost bookmark-toggle ${selected.isBookmarked ? 'active' : ''}`}
+              onClick={() => void toggleBookmark(selected.id)}
+              disabled={locked || recStatus === 'processing'}
+              aria-pressed={selected.isBookmarked}
+            >
+              {selected.isBookmarked ? 'Bookmarked' : 'Bookmark'}
+            </button>
+          ) : null}
           {selected ? (
             <button
               type="button"

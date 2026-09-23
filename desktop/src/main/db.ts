@@ -42,10 +42,15 @@ function migrate(): void {
       audio_path TEXT NOT NULL,
       audio_mime TEXT NOT NULL DEFAULT 'audio/webm',
       transcript TEXT NOT NULL DEFAULT '',
+      is_bookmarked INTEGER NOT NULL DEFAULT 0,
       status TEXT NOT NULL DEFAULT 'processing',
       error_message TEXT
     )
   `)
+  const recordingColumns = db.exec('PRAGMA table_info(recordings)')[0]?.values ?? []
+  if (!recordingColumns.some((column) => column[1] === 'is_bookmarked')) {
+    db.run('ALTER TABLE recordings ADD COLUMN is_bookmarked INTEGER NOT NULL DEFAULT 0')
+  }
   db.run(`
     CREATE TABLE IF NOT EXISTS tasks (
       id TEXT PRIMARY KEY,
@@ -93,23 +98,25 @@ export function listRecordings(): RecordingSummary[] {
     title: string
     created_at: number
     duration_ms: number
+    is_bookmarked: number
     status: RecordingStatus
     error_message: string | null
     task_count: number
     completed_count: number
   }>(
-    `SELECT r.id, r.title, r.created_at, r.duration_ms, r.status, r.error_message,
+    `SELECT r.id, r.title, r.created_at, r.duration_ms, r.is_bookmarked, r.status, r.error_message,
             COUNT(t.id) AS task_count,
             SUM(CASE WHEN t.completed = 1 THEN 1 ELSE 0 END) AS completed_count
      FROM recordings r
      LEFT JOIN tasks t ON t.recording_id = r.id
      GROUP BY r.id
-     ORDER BY r.created_at DESC`
+     ORDER BY r.is_bookmarked DESC, r.created_at DESC`
   ).map((row) => ({
     id: row.id,
     title: row.title,
     createdAt: row.created_at,
     durationMs: row.duration_ms,
+    isBookmarked: Boolean(row.is_bookmarked),
     status: row.status,
     errorMessage: row.error_message,
     taskCount: Number(row.task_count) || 0,
@@ -123,6 +130,7 @@ export function getRecording(id: string): Recording | null {
     title: string
     created_at: number
     duration_ms: number
+    is_bookmarked: number
     audio_path: string
     audio_mime: string
     transcript: string
@@ -149,6 +157,7 @@ export function getRecording(id: string): Recording | null {
     title: row.title,
     createdAt: row.created_at,
     durationMs: row.duration_ms,
+    isBookmarked: Boolean(row.is_bookmarked),
     status: row.status,
     errorMessage: row.error_message,
     audioPath: row.audio_path,
@@ -206,6 +215,7 @@ export function insertRecording(input: {
 export function updateRecording(input: {
   id: string
   title?: string
+  isBookmarked?: boolean
   transcript?: string
   status?: RecordingStatus
   errorMessage?: string | null
@@ -216,10 +226,11 @@ export function updateRecording(input: {
 
   db.run(
     `UPDATE recordings
-     SET title = ?, transcript = ?, status = ?, error_message = ?
+     SET title = ?, is_bookmarked = ?, transcript = ?, status = ?, error_message = ?
      WHERE id = ?`,
     [
       input.title ?? current.title,
+      input.isBookmarked === undefined ? (current.isBookmarked ? 1 : 0) : input.isBookmarked ? 1 : 0,
       input.transcript ?? current.transcript,
       input.status ?? current.status,
       input.errorMessage === undefined ? current.errorMessage : input.errorMessage,

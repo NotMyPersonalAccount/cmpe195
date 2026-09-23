@@ -6,6 +6,7 @@ type Props = {
   selectedId: string | null
   recordingLocked: boolean
   onSelect: (id: string) => void
+  onToggleBookmark: (id: string) => void
   onDelete: (id: string) => void
 }
 
@@ -14,6 +15,7 @@ export function HistoryList({
   selectedId,
   recordingLocked,
   onSelect,
+  onToggleBookmark,
   onDelete
 }: Props): React.JSX.Element {
   return (
@@ -45,6 +47,17 @@ export function HistoryList({
                       ? 'Needs attention'
                       : `${item.completedCount}/${item.taskCount} tasks`}
                 </span>
+              </button>
+              <button
+                type="button"
+                className={`history-bookmark ${item.isBookmarked ? 'active' : ''}`}
+                aria-label={`${item.isBookmarked ? 'Remove bookmark from' : 'Bookmark'} ${item.title}`}
+                aria-pressed={item.isBookmarked}
+                title={item.isBookmarked ? 'Remove bookmark' : 'Bookmark'}
+                disabled={recordingLocked}
+                onClick={() => onToggleBookmark(item.id)}
+              >
+                <span aria-hidden="true">{item.isBookmarked ? '★' : '☆'}</span>
               </button>
               <button
                 type="button"

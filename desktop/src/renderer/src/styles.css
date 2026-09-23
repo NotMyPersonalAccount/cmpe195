@@ -96,7 +96,7 @@ button {
 
 .history-list li {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: 1fr auto auto;
   gap: 8px;
   align-items: stretch;
 }
@@ -238,6 +238,22 @@ button {
 .btn.ghost,
 .icon-btn {
   background: transparent;
+}
+
+.history-bookmark {
+  align-self: center;
+  border: 0;
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 1.3rem;
+  line-height: 1;
+  padding: 6px;
+}
+
+.history-bookmark:hover,
+.history-bookmark.active,
+.bookmark-toggle.active {
+  color: #a76f12;
 }
 
 .btn.wide {

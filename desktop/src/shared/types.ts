@@ -17,6 +17,7 @@ export type RecordingSummary = {
   title: string
   createdAt: number
   durationMs: number
+  isBookmarked: boolean
   status: RecordingStatus
   errorMessage: string | null
   taskCount: number
@@ -50,6 +51,7 @@ export type CreateRecordingInput = {
 export type UpdateRecordingInput = {
   id: string
   title?: string
+  isBookmarked?: boolean
   transcript?: string
   status?: RecordingStatus
   errorMessage?: string | null
