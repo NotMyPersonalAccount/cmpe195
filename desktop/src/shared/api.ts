@@ -2,6 +2,8 @@ import type {
   CreateRecordingInput,
   Recording,
   RecordingSummary,
+  PreferenceKey,
+  StorageTarget,
   StorageInfo,
   UpdateRecordingInput
 } from './types'
@@ -13,9 +15,9 @@ export type CatchApi = {
   updateRecording: (input: UpdateRecordingInput) => Promise<Recording>
   deleteRecording: (id: string) => Promise<void>
   getAudio: (id: string) => Promise<{ mime: string; data: ArrayBuffer }>
-  getSetting: (key: string) => Promise<string | null>
-  setSetting: (key: string, value: string) => Promise<void>
+  getSetting: (key: PreferenceKey) => Promise<string | null>
+  setSetting: (key: PreferenceKey, value: string) => Promise<void>
   storageInfo: () => Promise<StorageInfo>
-  reveal: (target: string) => Promise<void>
+  revealStorage: (target: StorageTarget) => Promise<void>
   requestMicAccess: () => Promise<boolean>
 }

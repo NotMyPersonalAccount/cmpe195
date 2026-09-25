@@ -38,7 +38,12 @@ export type NewTaskInput = {
   deadlineLabel?: string | null
   completed?: boolean
   sortOrder?: number
+  createdAt?: number
+  updatedAt?: number
 }
+
+export type PreferenceKey = 'consentAccepted' | 'liveTranscript'
+export type StorageTarget = 'recordings' | 'database'
 
 export type CreateRecordingInput = {
   id: string

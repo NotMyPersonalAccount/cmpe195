@@ -20,6 +20,7 @@ export class LiveTranscriber {
   private queued = 0
   private chain: Promise<void> = Promise.resolve()
   private cancelled = false
+  private failed = false
   private note: string | null = null
 
   onUpdate?: (state: LiveState) => void
@@ -48,6 +49,7 @@ export class LiveTranscriber {
       this.buffer = new Float32Array(0)
     }
     await this.chain
+    if (this.failed) throw new Error(this.note ?? 'Live transcription failed')
     return this.text
   }
 
@@ -85,6 +87,7 @@ export class LiveTranscriber {
         this.note = null
       } catch (error) {
         this.segments[index] = ''
+        this.failed = true
         this.note =
           error instanceof Error
             ? `Live transcript paused: ${error.message}`

@@ -73,4 +73,17 @@ describe('extractTasks', () => {
     const upload = tasks.find((task) => /upload the project/i.test(task.description))
     expect(upload?.deadlineIso).toBe('2026-09-22')
   })
+
+  it('deduplicates repeated and nearly identical reminders', () => {
+    const tasks = extractTasks(
+      'Please submit the assignment by Friday. Remember to submit the assignment by Friday!',
+      tuesday
+    )
+    expect(tasks).toHaveLength(1)
+  })
+
+  it('limits automatic extraction to 25 tasks', () => {
+    const transcript = Array.from({ length: 40 }, (_, index) => `Read chapter ${index + 1}.`).join(' ')
+    expect(extractTasks(transcript, tuesday)).toHaveLength(25)
+  })
 })

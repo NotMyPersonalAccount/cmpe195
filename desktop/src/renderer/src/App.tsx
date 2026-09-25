@@ -20,6 +20,7 @@ type RecStatus = 'idle' | 'recording' | 'processing'
 export default function App(): React.JSX.Element {
   const recorderRef = useRef(new MicRecorder())
   const saveTimer = useRef<number | null>(null)
+  const historySaveTimers = useRef(new Map<string, number>())
   const liveRef = useRef<LiveTranscriber | null>(null)
 
   const [ready, setReady] = useState(false)
@@ -67,6 +68,11 @@ export default function App(): React.JSX.Element {
 
   useEffect(() => {
     recorderRef.current.onTick = setElapsedMs
+    const timers = historySaveTimers.current
+    return () => {
+      if (saveTimer.current) window.clearTimeout(saveTimer.current)
+      timers.forEach((timer) => window.clearTimeout(timer))
+    }
   }, [])
 
   const persist = useCallback(
@@ -135,31 +141,30 @@ export default function App(): React.JSX.Element {
 
   async function startRecording(): Promise<void> {
     setBanner(null)
-    const allowed = await window.api.requestMicAccess()
-    if (!allowed) {
-      setBanner('Microphone access is off. Enable it in System Settings, then try again.')
-      return
-    }
-    setLiveText('')
-    setLiveQueued(0)
-    setLiveNote(null)
-
-    const recorder = recorderRef.current
-    if (liveEnabled) {
-      const live = new LiveTranscriber()
-      live.onUpdate = (state) => {
-        setLiveText(state.text)
-        setLiveQueued(state.queued)
-        setLiveNote(state.note)
-      }
-      liveRef.current = live
-      recorder.onPcm = (samples) => live.push(samples)
-    } else {
-      liveRef.current = null
-      recorder.onPcm = undefined
-    }
-
     try {
+      const allowed = await window.api.requestMicAccess()
+      if (!allowed) {
+        setBanner('Microphone access is off. Enable it in System Settings, then try again.')
+        return
+      }
+      setLiveText('')
+      setLiveQueued(0)
+      setLiveNote(null)
+
+      const recorder = recorderRef.current
+      if (liveEnabled) {
+        const live = new LiveTranscriber()
+        live.onUpdate = (state) => {
+          setLiveText(state.text)
+          setLiveQueued(state.queued)
+          setLiveNote(state.note)
+        }
+        liveRef.current = live
+        recorder.onPcm = (samples) => live.push(samples)
+      } else {
+        liveRef.current = null
+        recorder.onPcm = undefined
+      }
       await recorder.start()
       setElapsedMs(0)
       setRecStatus('recording')
@@ -176,14 +181,14 @@ export default function App(): React.JSX.Element {
   async function stopRecording(): Promise<void> {
     const live = liveRef.current
     try {
-      const { blob, durationMs, mime } = await recorderRef.current.stop()
-      if (blob.size < 1000) {
+      const { blob, durationMs, mime, hasSpeech } = await recorderRef.current.stop()
+      if (blob.size < 1000 || durationMs < 800 || hasSpeech === false) {
         live?.cancel()
         liveRef.current = null
         setRecStatus('idle')
         setElapsedMs(0)
         setLiveText('')
-        setBanner('That recording was empty. Try again closer to the speaker.')
+        setBanner('That recording was empty or too quiet. Try again closer to the speaker.')
         return
       }
       const created = await window.api.createRecording({
@@ -203,7 +208,14 @@ export default function App(): React.JSX.Element {
       if (live) {
         setRecStatus('processing')
         setProcessingMessage('Finishing the last few seconds…')
-        text = await live.finish()
+        try {
+          text = await live.finish()
+        } catch {
+          // The audio was already saved. Fall back to the full recording so a
+          // live-model error never costs the student their transcript.
+          setBanner('Live transcript stopped early. Running a full local transcription instead.')
+          text = ''
+        }
         liveRef.current = null
       }
       await processAudio(created, blob, text)
@@ -254,6 +266,25 @@ export default function App(): React.JSX.Element {
       setSelected(next)
       setTitleDraft(next?.title ?? '')
     }
+    setBanner('Recording permanently deleted from this computer.')
+  }
+
+  function renameFromHistory(id: string, title: string): void {
+    setSummaries((items) => items.map((item) => (item.id === id ? { ...item, title } : item)))
+    if (selected?.id === id) {
+      setSelected({ ...selected, title })
+      setTitleDraft(title)
+    }
+    const previous = historySaveTimers.current.get(id)
+    if (previous) window.clearTimeout(previous)
+    historySaveTimers.current.set(
+      id,
+      window.setTimeout(async () => {
+        historySaveTimers.current.delete(id)
+        await window.api.updateRecording({ id, title: title.trim() || 'Untitled recording' })
+        setSummaries(await window.api.listRecordings())
+      }, 500)
+    )
   }
 
   async function toggleBookmark(id: string): Promise<void> {
@@ -343,7 +374,7 @@ export default function App(): React.JSX.Element {
         <PrivacyPanel
           info={storage}
           onClose={() => setShowPrivacy(false)}
-          onReveal={(path) => void window.api.reveal(path)}
+          onReveal={(target) => void window.api.revealStorage(target)}
         />
       ) : null}
 
@@ -352,6 +383,7 @@ export default function App(): React.JSX.Element {
         selectedId={selected?.id ?? null}
         recordingLocked={locked}
         onSelect={(id) => void selectRecording(id)}
+        onRename={renameFromHistory}
         onToggleBookmark={(id) => void toggleBookmark(id)}
         onDelete={(id) => void deleteRecording(id)}
       />
@@ -451,6 +483,7 @@ export default function App(): React.JSX.Element {
           />
           <TaskList
             tasks={selected?.tasks ?? []}
+            recordingId={selected?.id ?? null}
             disabled={!selected || recStatus !== 'idle' || selected.status === 'processing'}
             canRebuild={Boolean(selected && selected.status === 'ready' && selected.transcript.trim())}
             onRebuild={() => void rebuildTasks()}

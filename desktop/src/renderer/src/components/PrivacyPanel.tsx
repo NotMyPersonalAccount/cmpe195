@@ -3,7 +3,7 @@ import type { StorageInfo } from '@shared/types'
 type Props = {
   info: StorageInfo | null
   onClose: () => void
-  onReveal: (path: string) => void
+  onReveal: (target: 'recordings' | 'database') => void
 }
 
 export function PrivacyPanel({ info, onClose, onReveal }: Props): React.JSX.Element {
@@ -23,7 +23,7 @@ export function PrivacyPanel({ info, onClose, onReveal }: Props): React.JSX.Elem
             <dd>
               {info?.recordingsDir ?? 'Application data / recordings'}
               {info ? (
-                <button type="button" className="linkish" onClick={() => onReveal(info.recordingsDir)}>
+                <button type="button" className="linkish" onClick={() => onReveal('recordings')}>
                   Show folder
                 </button>
               ) : null}
@@ -34,7 +34,7 @@ export function PrivacyPanel({ info, onClose, onReveal }: Props): React.JSX.Elem
             <dd>
               {info?.databasePath ?? 'Application data / catch.sqlite'}
               {info ? (
-                <button type="button" className="linkish" onClick={() => onReveal(info.databasePath)}>
+                <button type="button" className="linkish" onClick={() => onReveal('database')}>
                   Show database
                 </button>
               ) : null}

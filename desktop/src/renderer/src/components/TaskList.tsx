@@ -1,9 +1,11 @@
 import type { Task } from '@shared/types'
 import { formatDeadline } from '@shared/format'
+import { isIsoDate } from '@shared/deadlines'
 import { useState } from 'react'
 
 type Props = {
   tasks: Task[]
+  recordingId: string | null
   disabled: boolean
   canRebuild?: boolean
   onRebuild?: () => void
@@ -12,6 +14,7 @@ type Props = {
 
 export function TaskList({
   tasks,
+  recordingId,
   disabled,
   canRebuild = false,
   onRebuild,
@@ -36,7 +39,7 @@ export function TaskList({
       ...tasks,
       {
         id: crypto.randomUUID(),
-        recordingId: tasks[0]?.recordingId ?? '',
+        recordingId: recordingId ?? '',
         description,
         deadlineIso: null,
         deadlineLabel: null,
@@ -92,19 +95,28 @@ export function TaskList({
                   value={task.description}
                   disabled={disabled}
                   onChange={(event) => update(task.id, { description: event.target.value })}
+                  aria-label="Task description"
                 />
-                <input
-                  className="task-deadline"
-                  placeholder="Deadline"
-                  value={task.deadlineLabel ?? task.deadlineIso ?? ''}
-                  disabled={disabled}
-                  onChange={(event) =>
-                    update(task.id, {
-                      deadlineLabel: event.target.value || null,
-                      deadlineIso: looksLikeIso(event.target.value) ? event.target.value : task.deadlineIso
-                    })
-                  }
-                />
+                <div className="deadline-fields">
+                  <input
+                    className="task-deadline"
+                    placeholder="Deadline wording"
+                    value={task.deadlineLabel ?? ''}
+                    disabled={disabled}
+                    onChange={(event) => update(task.id, { deadlineLabel: event.target.value || null })}
+                    aria-label="Original deadline wording"
+                  />
+                  <input
+                    type="date"
+                    className="task-deadline date"
+                    value={task.deadlineIso ?? ''}
+                    disabled={disabled}
+                    onChange={(event) =>
+                      update(task.id, { deadlineIso: isIsoDate(event.target.value) ? event.target.value : null })
+                    }
+                    aria-label="Normalized deadline date"
+                  />
+                </div>
                 {formatDeadline(task.deadlineIso, null) && task.deadlineIso ? (
                   <span className="deadline-chip">{formatDeadline(task.deadlineIso, task.deadlineLabel)}</span>
                 ) : null}
@@ -114,6 +126,7 @@ export function TaskList({
                 className="icon-btn danger"
                 disabled={disabled}
                 onClick={() => remove(task.id)}
+                aria-label={`Delete ${task.description}`}
               >
                 Delete
               </button>
@@ -142,8 +155,4 @@ export function TaskList({
       </form>
     </section>
   )
-}
-
-function looksLikeIso(value: string): boolean {
-  return /^\d{4}-\d{2}-\d{2}$/.test(value.trim())
 }

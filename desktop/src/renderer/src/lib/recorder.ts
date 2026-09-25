@@ -16,6 +16,8 @@ export class MicRecorder {
   private timer?: number
   private audioContext?: AudioContext
   private tap?: AudioWorkletNode
+  private speechMs = 0
+  private speechDetectionAvailable = false
 
   onTick?: (elapsedMs: number) => void
   /** Called with 16 kHz mono samples while recording, for live transcription. */
@@ -23,6 +25,8 @@ export class MicRecorder {
 
   async start(): Promise<void> {
     this.chunks = []
+    this.speechMs = 0
+    this.speechDetectionAvailable = false
     this.media = await navigator.mediaDevices.getUserMedia({
       audio: {
         echoCancellation: true,
@@ -41,14 +45,13 @@ export class MicRecorder {
       if (event.data.size > 0) this.chunks.push(event.data)
     })
 
-    if (this.onPcm) {
-      // Failing to tap audio must not cost the student their recording, so the
-      // live path is best-effort and MediaRecorder carries on regardless.
-      try {
-        await this.startTap()
-      } catch {
-        this.onPcm = undefined
-      }
+    // The tap also detects near-silent recordings. If it fails, MediaRecorder
+    // still carries on so a live-transcription problem cannot lose the audio.
+    try {
+      await this.startTap()
+      this.speechDetectionAvailable = true
+    } catch {
+      this.onPcm = undefined
     }
 
     this.startedAt = Date.now()
@@ -71,6 +74,7 @@ export class MicRecorder {
         context.sampleRate === TARGET_RATE
           ? event.data
           : resampleChunk(event.data, context.sampleRate, TARGET_RATE)
+      if (rms(samples) >= 0.008) this.speechMs += (samples.length / TARGET_RATE) * 1000
       this.onPcm?.(samples)
     }
 
@@ -86,7 +90,7 @@ export class MicRecorder {
     this.tap = tap
   }
 
-  stop(): Promise<{ blob: Blob; durationMs: number; mime: string }> {
+  stop(): Promise<{ blob: Blob; durationMs: number; mime: string; hasSpeech: boolean | null }> {
     const recorder = this.recorder
     if (!recorder || recorder.state === 'inactive') {
       this.cleanup()
@@ -102,8 +106,9 @@ export class MicRecorder {
         () => {
           try {
             const blob = new Blob(this.chunks, { type: mime })
+            const hasSpeech = this.speechDetectionAvailable ? this.speechMs >= 300 : null
             this.cleanup()
-            resolve({ blob, durationMs, mime })
+            resolve({ blob, durationMs, mime, hasSpeech })
           } catch (error) {
             this.cleanup()
             reject(error)
@@ -139,4 +144,11 @@ export class MicRecorder {
     this.media?.getTracks().forEach((track) => track.stop())
     this.media = undefined
   }
+}
+
+function rms(samples: Float32Array): number {
+  if (!samples.length) return 0
+  let sum = 0
+  for (const sample of samples) sum += sample * sample
+  return Math.sqrt(sum / samples.length)
 }

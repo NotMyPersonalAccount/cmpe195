@@ -95,10 +95,7 @@ button {
 }
 
 .history-list li {
-  display: grid;
-  grid-template-columns: 1fr auto auto;
-  gap: 8px;
-  align-items: stretch;
+  display: block;
 }
 
 .history-item,
@@ -114,11 +111,54 @@ button {
 }
 
 .history-item {
+  position: relative;
   text-align: left;
   border-radius: 14px;
   padding: 12px 12px 10px;
   display: grid;
   gap: 4px;
+}
+
+.history-open {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  color: transparent;
+}
+
+.history-title-input {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  background: transparent;
+  color: var(--ink);
+  padding: 2px 0;
+  font-weight: 650;
+}
+
+.history-title-input:hover,
+.history-title-input:focus {
+  border-bottom-color: var(--line);
+}
+
+.history-meta {
+  pointer-events: none;
+}
+
+.history-actions {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 32px;
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--line);
 }
 
 .history-item.selected {
@@ -221,6 +261,14 @@ button {
   border-radius: 999px;
   padding: 10px 16px;
   min-height: 44px;
+}
+
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+audio:focus-visible {
+  outline: 3px solid #2b67a0;
+  outline-offset: 2px;
 }
 
 .btn.primary {
@@ -485,6 +533,16 @@ button {
   max-width: 220px;
 }
 
+.deadline-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(138px, 0.72fr);
+  gap: 6px;
+}
+
+.deadline-fields .task-deadline {
+  max-width: none;
+}
+
 .deadline-chip {
   justify-self: start;
   font-size: 0.78rem;
@@ -606,6 +664,22 @@ button {
 
   .timer {
     font-size: 2rem;
+  }
+
+  .recorder-actions,
+  .session-head,
+  .head-actions {
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 680px) {
+  .main {
+    padding: 16px;
+  }
+
+  .deadline-fields {
+    grid-template-columns: 1fr;
   }
 }
 

@@ -1,72 +1,125 @@
 # Catch
 
-Catch is a laptop app for students who are already in class with a computer open. Record a lecture or meeting, get a transcript, and walk out with an editable to-do list. Audio, text, and tasks stay on this computer.
+Catch is a privacy-first Electron study assistant. It records a live lecture or
+meeting, transcribes it on the laptop, extracts assignments and deadlines, and
+keeps the recording, transcript, and editable to-do list together.
 
-It cannot reconstruct a class that already happened. The point is to press record after you have permission, then stop when the room is done.
+**Lectures in. To-dos out. Nothing uploaded.**
 
-## What it does
+## Privacy model
 
-- Records from the laptop microphone, with a timer and a clear “microphone is on” state
-- Transcribes locally with a Whisper model that runs in the app, live while you record
-- Runs a slower, more accurate pass over the saved audio on request
-- Pulls assignments, action items, and deadlines out of the transcript
-- Lets you edit, check off, add, and delete tasks
-- Rebuilds the list from the transcript after you correct a misheard word
-- Saves recordings, transcripts, and tasks in SQLite plus local audio files
-- Opens previous recordings from history and deletes them when you are done
+- Catch requests microphone access only after **Start recording** is pressed.
+- Microphone tracks are stopped immediately after **Stop** or **Cancel**.
+- Audio is written to Catch's OS application-data directory.
+- Transcripts, tasks, preferences, and recording metadata are stored in a local
+  `catch.sqlite` database.
+- The recording is never sent to Hugging Face or another server.
+- The first transcription may download the English Whisper model from Hugging
+  Face. This downloads model files, not the user's recording. The browser cache
+  is reused so transcription works offline after the model is cached.
+- Deleting a session permanently removes its audio file, transcript, tasks, and
+  database row.
 
-The first transcription may download a small English speech model from Hugging Face. That download is the model, not your lecture. After that, transcription can run offline.
+Always obtain permission from instructors, classmates, and other participants
+before recording them.
 
-## Run it
+## Features
 
-Needs Node 20+ and a microphone.
+- MediaRecorder audio capture with a prominent microphone state and timer
+- Optional live transcript, segmented at quiet pauses and processed in order
+- Local `Xenova/whisper-tiny.en` transcription in a Web Worker
+- WebGPU acceleration when available, with a WASM fallback
+- Full-recording **Transcribe again** pass for improved accuracy
+- Heuristic extraction of academic actions and normalized deadlines
+- Editable transcript, title, deadlines, and tasks with debounced autosave
+- Task completion, manual task creation, deletion, and task-list rebuilding
+- Completed-state preservation when matching tasks are rebuilt
+- Bookmarked recordings sorted above the newest unbookmarked recordings
+- Native audio playback and permanent deletion
+- Actual storage locations in the privacy panel, with file-manager shortcuts
+- Atomic temporary-file replacement when persisting the sql.js database
+
+## Requirements
+
+- Node.js 20 or newer
+- npm
+- A supported Windows, macOS, or Linux desktop
+- A microphone for recording
+- Internet access for the first model download
+
+## Development
 
 ```bash
 cd desktop
 npm install
-npm test
 npm run dev
 ```
 
-macOS will ask for microphone access the first time you record. If the recording is silent, check System Settings → Privacy & Security → Microphone.
+The Electron window defaults to 1280×860 and has a 960×680 minimum size.
 
-## Check the pipeline without a microphone
+## Verification
 
-Transcription and task extraction can be exercised end to end from the command
-line, which is faster than re-recording every time you change the extractor:
+```bash
+npm test
+npm run typecheck
+npm run build
+```
+
+The Vitest suite covers silence-aware audio segmentation, silent-audio
+detection, deadline normalization, task extraction and deduplication, the
+25-task limit, checked-state preservation after rebuilding, and database-row
+transformations.
+
+To exercise the real Whisper and task-extraction pipeline without a microphone:
 
 ```bash
 say -f scripts/lecture.txt -o /tmp/lecture.aiff
 afconvert -f WAVE -d LEI16@16000 -c 1 /tmp/lecture.aiff /tmp/lecture.wav
-node --experimental-strip-types scripts/check-pipeline.ts /tmp/lecture.wav
+npm run check:pipeline -- /tmp/lecture.wav
 ```
 
-It replays the file the way the audio worklet feeds the app while recording, so
-it reports the same segmentation the live path uses, both transcripts side by
-side, the tasks each produces, and how far ahead of realtime the machine runs.
-Point it at any WAV to test a real lecture instead of a synthesised one.
+The `say` and `afconvert` commands are macOS utilities. On other platforms,
+pass any mono 16 kHz PCM WAV to `check-pipeline.ts`.
 
-## Build an installer
+Manual release checks should cover:
+
+1. First-run consent and microphone permission denial.
+2. Start, stop, cancel, microphone release, and quiet-recording rejection.
+3. Live transcript on/off, model-download messaging, and catching-up status.
+4. Full retranscription and task rebuilding confirmation.
+5. Transcript, title, task, completion, and deadline autosaving.
+6. Bookmark sorting, restart playback, and complete deletion.
+7. Narrow-window layout, keyboard navigation, and visible focus states.
+8. Offline transcription after the model has been cached.
+
+## Packaging
 
 ```bash
-cd desktop
-npm run package:mac      # macOS .dmg
-npm run package:win      # Windows
-npm run package:linux    # AppImage
+npm run package:mac
+npm run package:win
+npm run package:linux
+npm run package:dir
 ```
 
-The packaged app still processes audio on the machine it is installed on. Data lives in the OS application-data folder (on macOS, under `~/Library/Application Support/Catch`).
+`electron-builder.yml` includes macOS microphone usage text and packages the
+sql.js WASM runtime for all targets. Cross-platform installers are usually best
+built on their target operating system or in CI.
 
-## Privacy
+## Architecture
 
-- Ask people before you record them.
-- The microphone is used only while a recording is in progress.
-- Recordings are files in the Catch recordings folder. Transcripts and tasks are in `catch.sqlite`.
-- Nothing you record is uploaded.
-- Delete a row in history to remove that audio, transcript, and task list.
+- `src/main` — Electron window, local file storage, sql.js persistence, IPC
+- `src/preload` — narrow typed bridge exposed as `window.api`
+- `src/renderer` — React workspace, recording pipeline, live transcript UI
+- `src/renderer/src/workers` — Whisper worker and PCM AudioWorklet
+- `src/shared` — domain types, deadlines, extraction, segmentation, transforms
+- `scripts/check-pipeline.ts` — reproducible local speech-to-task harness
 
-## Limits
+## Known limitations
 
-This is an MVP. It does not do speaker labels, cloud sync, calendar reminders, or “what happened in the last 15 seconds.” Task extraction is useful, not perfect — edit anything it gets wrong.
-
-Live transcript trades some accuracy for speed. It cuts the audio at pauses and transcribes each piece without the surrounding context, so a word split across a cut can come out wrong. When a transcript matters, press **Transcribe again** to re-run the whole recording in one pass, then **Rebuild from transcript** to redo the tasks. Turn the live toggle off to skip straight to the slower, better pass.
+- Transcription is English-only.
+- There is no speaker identification.
+- There is no cloud sync or backup.
+- There is no calendar integration or automatic reminder service.
+- Task extraction is heuristic and intentionally editable.
+- Live transcription favors speed; full retranscription favors accuracy.
+- Catch cannot recover a lecture unless recording was started while it happened.

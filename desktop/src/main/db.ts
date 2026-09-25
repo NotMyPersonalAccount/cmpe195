@@ -6,11 +6,11 @@ import type {
   Recording,
   RecordingStatus,
   RecordingSummary,
-  StorageInfo,
-  Task
+  StorageInfo
 } from '@shared/types'
 import { databasePath, existingWasm, recordingsDir } from './paths'
 import { app } from 'electron'
+import { rowToSummary, rowToTask, type RecordingRow, type TaskRow } from '@shared/recordingTransforms'
 
 type Bind = Array<string | number | null>
 
@@ -29,7 +29,17 @@ export async function initDb(): Promise<void> {
   }
   db.run('PRAGMA foreign_keys = ON')
   migrate()
+  recoverInterruptedRecordings()
   persist()
+}
+
+function recoverInterruptedRecordings(): void {
+  db.run(
+    `UPDATE recordings
+     SET status = 'error',
+         error_message = 'Processing was interrupted. Select Try again to transcribe the saved audio.'
+     WHERE status = 'processing'`
+  )
 }
 
 function migrate(): void {
@@ -93,17 +103,7 @@ function allObjects<T>(sql: string, params: Bind = []): T[] {
 }
 
 export function listRecordings(): RecordingSummary[] {
-  return allObjects<{
-    id: string
-    title: string
-    created_at: number
-    duration_ms: number
-    is_bookmarked: number
-    status: RecordingStatus
-    error_message: string | null
-    task_count: number
-    completed_count: number
-  }>(
+  return allObjects<RecordingRow>(
     `SELECT r.id, r.title, r.created_at, r.duration_ms, r.is_bookmarked, r.status, r.error_message,
             COUNT(t.id) AS task_count,
             SUM(CASE WHEN t.completed = 1 THEN 1 ELSE 0 END) AS completed_count
@@ -111,17 +111,7 @@ export function listRecordings(): RecordingSummary[] {
      LEFT JOIN tasks t ON t.recording_id = r.id
      GROUP BY r.id
      ORDER BY r.is_bookmarked DESC, r.created_at DESC`
-  ).map((row) => ({
-    id: row.id,
-    title: row.title,
-    createdAt: row.created_at,
-    durationMs: row.duration_ms,
-    isBookmarked: Boolean(row.is_bookmarked),
-    status: row.status,
-    errorMessage: row.error_message,
-    taskCount: Number(row.task_count) || 0,
-    completedCount: Number(row.completed_count) || 0
-  }))
+  ).map(rowToSummary)
 }
 
 export function getRecording(id: string): Recording | null {
@@ -140,17 +130,10 @@ export function getRecording(id: string): Recording | null {
   const row = rows[0]
   if (!row) return null
 
-  const tasks = allObjects<{
-    id: string
-    recording_id: string
-    description: string
-    deadline_iso: string | null
-    deadline_label: string | null
-    completed: number
-    sort_order: number
-    created_at: number
-    updated_at: number
-  }>('SELECT * FROM tasks WHERE recording_id = ? ORDER BY sort_order ASC, created_at ASC', [id]).map(mapTask)
+  const tasks = allObjects<TaskRow>(
+    'SELECT * FROM tasks WHERE recording_id = ? ORDER BY sort_order ASC, created_at ASC',
+    [id]
+  ).map(rowToTask)
 
   return {
     id: row.id,
@@ -166,30 +149,6 @@ export function getRecording(id: string): Recording | null {
     taskCount: tasks.length,
     completedCount: tasks.filter((task) => task.completed).length,
     tasks
-  }
-}
-
-function mapTask(row: {
-  id: string
-  recording_id: string
-  description: string
-  deadline_iso: string | null
-  deadline_label: string | null
-  completed: number
-  sort_order: number
-  created_at: number
-  updated_at: number
-}): Task {
-  return {
-    id: row.id,
-    recordingId: row.recording_id,
-    description: row.description,
-    deadlineIso: row.deadline_iso,
-    deadlineLabel: row.deadline_label,
-    completed: Boolean(row.completed),
-    sortOrder: row.sort_order,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at
   }
 }
 
@@ -224,41 +183,48 @@ export function updateRecording(input: {
   const current = getRecording(input.id)
   if (!current) throw new Error('Recording not found')
 
-  db.run(
-    `UPDATE recordings
-     SET title = ?, is_bookmarked = ?, transcript = ?, status = ?, error_message = ?
-     WHERE id = ?`,
-    [
-      input.title ?? current.title,
-      input.isBookmarked === undefined ? (current.isBookmarked ? 1 : 0) : input.isBookmarked ? 1 : 0,
-      input.transcript ?? current.transcript,
-      input.status ?? current.status,
-      input.errorMessage === undefined ? current.errorMessage : input.errorMessage,
-      input.id
-    ]
-  )
+  db.run('BEGIN')
+  try {
+    db.run(
+      `UPDATE recordings
+       SET title = ?, is_bookmarked = ?, transcript = ?, status = ?, error_message = ?
+       WHERE id = ?`,
+      [
+        input.title ?? current.title,
+        input.isBookmarked === undefined ? (current.isBookmarked ? 1 : 0) : input.isBookmarked ? 1 : 0,
+        input.transcript ?? current.transcript,
+        input.status ?? current.status,
+        input.errorMessage === undefined ? current.errorMessage : input.errorMessage,
+        input.id
+      ]
+    )
 
-  if (input.tasks) {
-    db.run('DELETE FROM tasks WHERE recording_id = ?', [input.id])
-    const now = Date.now()
-    input.tasks.forEach((task, index) => {
-      db.run(
-        `INSERT INTO tasks
-         (id, recording_id, description, deadline_iso, deadline_label, completed, sort_order, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          task.id ?? crypto.randomUUID(),
-          input.id,
-          task.description,
-          task.deadlineIso ?? null,
-          task.deadlineLabel ?? null,
-          task.completed ? 1 : 0,
-          task.sortOrder ?? index,
-          now,
-          now
-        ]
-      )
-    })
+    if (input.tasks) {
+      db.run('DELETE FROM tasks WHERE recording_id = ?', [input.id])
+      const now = Date.now()
+      input.tasks.forEach((task, index) => {
+        db.run(
+          `INSERT INTO tasks
+           (id, recording_id, description, deadline_iso, deadline_label, completed, sort_order, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            task.id ?? crypto.randomUUID(),
+            input.id,
+            task.description,
+            task.deadlineIso ?? null,
+            task.deadlineLabel ?? null,
+            task.completed ? 1 : 0,
+            task.sortOrder ?? index,
+            task.createdAt ?? now,
+            task.updatedAt ?? now
+          ]
+        )
+      })
+    }
+    db.run('COMMIT')
+  } catch (error) {
+    db.run('ROLLBACK')
+    throw error
   }
 
   persist()
@@ -267,12 +233,10 @@ export function updateRecording(input: {
   return updated
 }
 
-export function deleteRecording(id: string): string | null {
-  const current = getRecording(id)
+export function deleteRecording(id: string): void {
   db.run('DELETE FROM tasks WHERE recording_id = ?', [id])
   db.run('DELETE FROM recordings WHERE id = ?', [id])
   persist()
-  return current?.audioPath ?? null
 }
 
 export function getSetting(key: string): string | null {

@@ -1,6 +1,6 @@
 import { ipcMain, shell, systemPreferences } from 'electron'
 import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'fs'
-import { extname, join } from 'path'
+import { join } from 'path'
 import {
   deleteRecording,
   getRecording,
@@ -11,8 +11,25 @@ import {
   storageInfo,
   updateRecording
 } from './db'
-import { recordingsDir } from './paths'
-import type { CreateRecordingInput, UpdateRecordingInput } from '@shared/types'
+import { databasePath, recordingsDir } from './paths'
+import type {
+  CreateRecordingInput,
+  PreferenceKey,
+  StorageTarget,
+  UpdateRecordingInput
+} from '@shared/types'
+
+const preferenceKeys = new Set<PreferenceKey>(['consentAccepted', 'liveTranscript'])
+
+function requireId(id: unknown): string {
+  if (typeof id !== 'string' || !/^[a-zA-Z0-9-]{8,80}$/.test(id)) throw new Error('Invalid recording ID')
+  return id
+}
+
+function requirePreference(key: unknown): PreferenceKey {
+  if (!preferenceKeys.has(key as PreferenceKey)) throw new Error('Unknown preference')
+  return key as PreferenceKey
+}
 
 function extensionFor(mime: string): string {
   if (mime.includes('mp4') || mime.includes('m4a') || mime.includes('aac')) return 'm4a'
@@ -24,38 +41,54 @@ function extensionFor(mime: string): string {
 export function registerIpc(): void {
   ipcMain.handle('recordings:list', () => listRecordings())
 
-  ipcMain.handle('recordings:get', (_event, id: string) => getRecording(id))
+  ipcMain.handle('recordings:get', (_event, id: string) => getRecording(requireId(id)))
 
   ipcMain.handle('recordings:create', (_event, input: CreateRecordingInput) => {
+    requireId(input.id)
+    if (!(input.audio instanceof ArrayBuffer) || input.audio.byteLength < 1) throw new Error('Recording is empty')
+    if (typeof input.title !== 'string' || typeof input.audioMime !== 'string') throw new Error('Invalid recording')
     const dir = recordingsDir()
     mkdirSync(dir, { recursive: true })
     const audioPath = join(dir, `${input.id}.${extensionFor(input.audioMime)}`)
     writeFileSync(audioPath, Buffer.from(input.audio))
-    return insertRecording({
-      id: input.id,
-      title: input.title,
-      createdAt: Date.now(),
-      durationMs: input.durationMs,
-      audioPath,
-      audioMime: input.audioMime
-    })
-  })
-
-  ipcMain.handle('recordings:update', (_event, input: UpdateRecordingInput) => updateRecording(input))
-
-  ipcMain.handle('recordings:delete', (_event, id: string) => {
-    const audioPath = deleteRecording(id)
-    if (audioPath) {
+    try {
+      return insertRecording({
+        id: input.id,
+        title: input.title,
+        createdAt: Date.now(),
+        durationMs: input.durationMs,
+        audioPath,
+        audioMime: input.audioMime
+      })
+    } catch (error) {
       try {
         unlinkSync(audioPath)
       } catch {
-        // File may already be gone.
+        // Preserve the original database error.
       }
+      throw error
     }
   })
 
+  ipcMain.handle('recordings:update', (_event, input: UpdateRecordingInput) => {
+    requireId(input.id)
+    return updateRecording(input)
+  })
+
+  ipcMain.handle('recordings:delete', (_event, id: string) => {
+    const safeId = requireId(id)
+    const recording = getRecording(safeId)
+    if (!recording) return
+    try {
+      unlinkSync(recording.audioPath)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    }
+    deleteRecording(safeId)
+  })
+
   ipcMain.handle('recordings:audio', (_event, id: string) => {
-    const recording = getRecording(id)
+    const recording = getRecording(requireId(id))
     if (!recording) throw new Error('Recording not found')
     const buffer = readFileSync(recording.audioPath)
     return {
@@ -64,16 +97,17 @@ export function registerIpc(): void {
     }
   })
 
-  ipcMain.handle('settings:get', (_event, key: string) => getSetting(key))
-  ipcMain.handle('settings:set', (_event, key: string, value: string) => {
-    setSetting(key, value)
+  ipcMain.handle('settings:get', (_event, key: PreferenceKey) => getSetting(requirePreference(key)))
+  ipcMain.handle('settings:set', (_event, key: PreferenceKey, value: string) => {
+    setSetting(requirePreference(key), String(value))
   })
 
   ipcMain.handle('app:storage', () => storageInfo())
 
-  ipcMain.handle('app:reveal', (_event, target: string) => {
-    if (extname(target)) shell.showItemInFolder(target)
-    else shell.openPath(target)
+  ipcMain.handle('app:reveal-storage', (_event, target: StorageTarget) => {
+    if (target === 'database') shell.showItemInFolder(databasePath())
+    else if (target === 'recordings') void shell.openPath(recordingsDir())
+    else throw new Error('Unknown storage target')
   })
 
   ipcMain.handle('app:mic-access', async () => {

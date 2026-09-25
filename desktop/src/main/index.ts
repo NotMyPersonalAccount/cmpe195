@@ -43,10 +43,12 @@ function createWindow(): void {
 app.whenReady().then(async () => {
   electronApp.setAppUserModelId('edu.sjsu.catch')
 
-  session.defaultSession.setPermissionRequestHandler((_contents, permission, callback) => {
-    callback(permission === 'media')
+  session.defaultSession.setPermissionRequestHandler((_contents, permission, callback, details) => {
+    callback(permission === 'media' && 'mediaTypes' in details && details.mediaTypes?.includes('audio') === true)
   })
-  session.defaultSession.setPermissionCheckHandler((_contents, permission) => permission === 'media')
+  session.defaultSession.setPermissionCheckHandler((_contents, permission, _origin, details) =>
+    permission === 'media' && details.mediaType === 'audio'
+  )
 
   await initDb()
   registerIpc()
