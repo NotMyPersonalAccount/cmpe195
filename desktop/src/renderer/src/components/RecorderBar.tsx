@@ -12,6 +12,7 @@ type Props = {
   onStart: () => void
   onStop: () => void
   onCancel: () => void
+  onCancelProcessing: () => void
 }
 
 export function RecorderBar({
@@ -23,7 +24,8 @@ export function RecorderBar({
   onToggleLive,
   onStart,
   onStop,
-  onCancel
+  onCancel,
+  onCancelProcessing
 }: Props): React.JSX.Element {
   return (
     <section className={`recorder ${status}`} aria-live="polite">
@@ -80,8 +82,12 @@ export function RecorderBar({
               Cancel
             </button>
           </>
+        ) : status === 'processing' ? (
+          <button type="button" className="btn ghost" onClick={onCancelProcessing}>
+            Cancel processing
+          </button>
         ) : (
-          <button type="button" className="btn primary record" onClick={onStart} disabled={status === 'processing'}>
+          <button type="button" className="btn primary record" onClick={onStart}>
             Start recording
           </button>
         )}

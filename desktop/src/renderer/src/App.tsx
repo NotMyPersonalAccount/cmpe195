@@ -12,7 +12,7 @@ import { TaskList } from './components/TaskList'
 import { AudioPlayer } from './components/AudioPlayer'
 import { MicRecorder } from './lib/recorder'
 import { decodeTo16k } from './lib/audio'
-import { transcribe } from './lib/transcribe'
+import { cancelTranscription, transcribe } from './lib/transcribe'
 import { LiveTranscriber } from './lib/liveTranscriber'
 
 type RecStatus = 'idle' | 'recording' | 'processing'
@@ -22,8 +22,10 @@ export default function App(): React.JSX.Element {
   const saveTimer = useRef<number | null>(null)
   const historySaveTimers = useRef(new Map<string, number>())
   const liveRef = useRef<LiveTranscriber | null>(null)
+  const previousSelectionRef = useRef<string | null>(null)
 
   const [ready, setReady] = useState(false)
+  const [bootError, setBootError] = useState<string | null>(null)
   const [consentNeeded, setConsentNeeded] = useState(false)
   const [showPrivacy, setShowPrivacy] = useState(false)
   const [storage, setStorage] = useState<StorageInfo | null>(null)
@@ -44,24 +46,29 @@ export default function App(): React.JSX.Element {
 
   useEffect(() => {
     async function boot(): Promise<void> {
-      const [consent, live, info, list] = await Promise.all([
-        window.api.getSetting('consentAccepted'),
-        window.api.getSetting('liveTranscript'),
-        window.api.storageInfo(),
-        window.api.listRecordings()
-      ])
-      setConsentNeeded(consent !== 'true')
-      setLiveEnabled(live !== 'false')
-      setStorage(info)
-      setSummaries(list)
-      if (list[0]) {
-        const full = await window.api.getRecording(list[0].id)
-        if (full) {
-          setSelected(full)
-          setTitleDraft(full.title)
+      try {
+        const [consent, live, info, list] = await Promise.all([
+          window.api.getSetting('consentAccepted'),
+          window.api.getSetting('liveTranscript'),
+          window.api.storageInfo(),
+          window.api.listRecordings()
+        ])
+        setConsentNeeded(consent !== 'true')
+        setLiveEnabled(live !== 'false')
+        setStorage(info)
+        setSummaries(list)
+        if (list[0]) {
+          const full = await window.api.getRecording(list[0].id)
+          if (full) {
+            setSelected(full)
+            setTitleDraft(full.title)
+          }
         }
+      } catch (error) {
+        setBootError(error instanceof Error ? error.message : 'Catch could not open its local data.')
+      } finally {
+        setReady(true)
       }
-      setReady(true)
     }
     void boot()
   }, [])
@@ -139,6 +146,14 @@ export default function App(): React.JSX.Element {
     }
   }
 
+  async function restorePreviousSelection(): Promise<void> {
+    const id = previousSelectionRef.current
+    previousSelectionRef.current = null
+    const previous = id ? await window.api.getRecording(id) : null
+    setSelected(previous)
+    setTitleDraft(previous?.title ?? '')
+  }
+
   async function startRecording(): Promise<void> {
     setBanner(null)
     try {
@@ -154,11 +169,12 @@ export default function App(): React.JSX.Element {
       const recorder = recorderRef.current
       if (liveEnabled) {
         const live = new LiveTranscriber()
-        live.onUpdate = (state) => {
-          setLiveText(state.text)
-          setLiveQueued(state.queued)
-          setLiveNote(state.note)
-        }
+      live.onUpdate = (state) => {
+        setLiveText(state.text)
+        setLiveQueued(state.queued)
+        setLiveNote(state.note)
+        if (state.note) setProcessingMessage(state.note)
+      }
         liveRef.current = live
         recorder.onPcm = (samples) => live.push(samples)
       } else {
@@ -168,6 +184,7 @@ export default function App(): React.JSX.Element {
       await recorder.start()
       setElapsedMs(0)
       setRecStatus('recording')
+      previousSelectionRef.current = selected?.id ?? null
       setSelected(null)
       setTitleDraft(defaultTitle())
     } catch (error) {
@@ -189,6 +206,7 @@ export default function App(): React.JSX.Element {
         setElapsedMs(0)
         setLiveText('')
         setBanner('That recording was empty or too quiet. Try again closer to the speaker.')
+        await restorePreviousSelection()
         return
       }
       const created = await window.api.createRecording({
@@ -229,7 +247,7 @@ export default function App(): React.JSX.Element {
     }
   }
 
-  function cancelRecording(): void {
+  async function cancelRecording(): Promise<void> {
     liveRef.current?.cancel()
     liveRef.current = null
     recorderRef.current.cancel()
@@ -239,6 +257,12 @@ export default function App(): React.JSX.Element {
     setLiveQueued(0)
     setLiveNote(null)
     setBanner('Recording discarded.')
+    await restorePreviousSelection()
+  }
+
+  function cancelProcessing(): void {
+    cancelTranscription()
+    setProcessingMessage('Cancelling…')
   }
 
   async function toggleLive(next: boolean): Promise<void> {
@@ -360,6 +384,19 @@ export default function App(): React.JSX.Element {
     return <div className="boot">Opening Catch…</div>
   }
 
+  if (bootError) {
+    return (
+      <main className="boot error-boot" role="alert">
+        <div>
+          <p className="eyebrow">Catch could not open</p>
+          <h1>Your recordings were not changed.</h1>
+          <p>{bootError}</p>
+          <p>Quit and reopen Catch. If the problem continues, use the Privacy panel’s database path from a working copy to back up your data.</p>
+        </div>
+      </main>
+    )
+  }
+
   return (
     <div className="app">
       {consentNeeded ? (
@@ -408,10 +445,11 @@ export default function App(): React.JSX.Element {
           onToggleLive={(next) => void toggleLive(next)}
           onStart={() => void startRecording()}
           onStop={() => void stopRecording()}
-          onCancel={cancelRecording}
+          onCancel={() => void cancelRecording()}
+          onCancelProcessing={cancelProcessing}
         />
 
-        {banner ? <p className="banner">{banner}</p> : null}
+        {banner ? <p className="banner" role="status">{banner}</p> : null}
 
         <div className="session-head">
           <input

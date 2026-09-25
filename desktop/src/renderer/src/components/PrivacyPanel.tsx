@@ -1,4 +1,5 @@
 import type { StorageInfo } from '@shared/types'
+import { useEffect, useRef } from 'react'
 
 type Props = {
   info: StorageInfo | null
@@ -7,6 +8,17 @@ type Props = {
 }
 
 export function PrivacyPanel({ info, onClose, onReveal }: Props): React.JSX.Element {
+  const closeRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    closeRef.current?.focus()
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [onClose])
+
   return (
     <div className="overlay" role="dialog" aria-modal="true" aria-labelledby="privacy-title">
       <div className="modal wide-modal">
@@ -55,7 +67,7 @@ export function PrivacyPanel({ info, onClose, onReveal }: Props): React.JSX.Elem
             </dd>
           </div>
         </dl>
-        <button type="button" className="btn" onClick={onClose}>
+        <button ref={closeRef} type="button" className="btn" onClick={onClose}>
           Close
         </button>
       </div>

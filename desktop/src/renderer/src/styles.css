@@ -56,6 +56,18 @@ button {
   font-size: 1.4rem;
 }
 
+.error-boot {
+  padding: 32px;
+}
+
+.error-boot > div {
+  width: min(620px, 100%);
+  padding: 28px;
+  border: 1px solid var(--record);
+  border-radius: var(--radius);
+  background: var(--card);
+}
+
 .history {
   background: var(--paper-2);
   border-right: 1px solid var(--line);

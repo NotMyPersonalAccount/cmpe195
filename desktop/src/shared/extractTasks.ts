@@ -85,12 +85,18 @@ function dedupe(tasks: ExtractedTask[]): ExtractedTask[] {
     const key = normalize(task.description)
     const duplicate = kept.find((item) => {
       const other = normalize(item.description)
-      return other === key || other.includes(key) || key.includes(other) || similarity(other, key) >= 0.82
+      return other === key || tokenSubset(other, key) || tokenSubset(key, other) || similarity(other, key) >= 0.82
     })
     if (!duplicate) kept.push(task)
     else if (task.description.length > duplicate.description.length) kept[kept.indexOf(duplicate)] = task
   }
   return kept
+}
+
+function tokenSubset(shorter: string, longer: string): boolean {
+  const left = shorter.split(' ').filter(Boolean)
+  const right = new Set(longer.split(' ').filter(Boolean))
+  return left.length >= 3 && left.length < right.size && right.size - left.length <= 2 && left.every((token) => right.has(token))
 }
 
 function similarity(a: string, b: string): number {

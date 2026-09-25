@@ -1,8 +1,16 @@
+import { useEffect, useRef } from 'react'
+
 type Props = {
   onAccept: () => void
 }
 
 export function ConsentModal({ onAccept }: Props): React.JSX.Element {
+  const acceptRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    acceptRef.current?.focus()
+  }, [])
+
   return (
     <div className="overlay" role="dialog" aria-modal="true" aria-labelledby="consent-title">
       <div className="modal">
@@ -24,7 +32,7 @@ export function ConsentModal({ onAccept }: Props): React.JSX.Element {
           <li>You can delete any recording, transcript, and its tasks from history at any time.</li>
         </ul>
         <p className="fine">This app cannot recover a lecture that already happened unless you record it live.</p>
-        <button type="button" className="btn primary wide" onClick={onAccept}>
+        <button ref={acceptRef} type="button" className="btn primary wide" onClick={onAccept}>
           I understand
         </button>
       </div>

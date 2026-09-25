@@ -82,6 +82,11 @@ describe('extractTasks', () => {
     expect(tasks).toHaveLength(1)
   })
 
+  it('does not confuse chapter 1 with chapter 10', () => {
+    const tasks = extractTasks('Read chapter 1. Read chapter 10.', tuesday)
+    expect(tasks.map((task) => task.description)).toEqual(['Read chapter 1', 'Read chapter 10'])
+  })
+
   it('limits automatic extraction to 25 tasks', () => {
     const transcript = Array.from({ length: 40 }, (_, index) => `Read chapter ${index + 1}.`).join(' ')
     expect(extractTasks(transcript, tuesday)).toHaveLength(25)

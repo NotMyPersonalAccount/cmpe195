@@ -63,7 +63,12 @@ function loadModel(): Promise<Transcriber> {
       )) as unknown as Transcriber
     }
     return transcriber
-  })()
+  })().catch((error) => {
+    // A temporary download/offline failure must not poison every future retry.
+    loading = null
+    transcriber = null
+    throw error
+  })
 
   return loading
 }

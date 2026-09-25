@@ -82,7 +82,14 @@ export class LiveTranscriber {
     this.chain = this.chain.then(async () => {
       if (this.cancelled) return
       try {
-        const text = await transcribe(segment, undefined, true)
+        const text = await transcribe(
+          segment,
+          (message) => {
+            this.note = message
+            this.emit()
+          },
+          true
+        )
         this.segments[index] = text.trim()
         this.note = null
       } catch (error) {
