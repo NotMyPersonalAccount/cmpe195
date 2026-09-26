@@ -15,6 +15,7 @@ import { readFileSync } from 'node:fs'
 import { pipeline } from '@huggingface/transformers'
 import { findCutPoint, isProbablySilent } from '../src/shared/segmentAudio.ts'
 import { extractTasks } from '../src/shared/extractTasks.ts'
+import { cleanTranscriptText } from '../src/shared/cleanTranscript.ts'
 
 const SAMPLE_RATE = 16000
 const WORKLET_CHUNK = 4096
@@ -76,12 +77,13 @@ function segment(samples: Float32Array): Float32Array[] {
 }
 
 function textOf(result: { text?: string } | Array<{ text?: string }>): string {
-  return Array.isArray(result)
+  const text = Array.isArray(result)
     ? result
         .map((item) => item.text?.trim())
         .filter(Boolean)
         .join(' ')
     : (result.text ?? '').trim()
+  return cleanTranscriptText(text)
 }
 
 function seconds(samples: number): number {
@@ -109,7 +111,7 @@ async function main(): Promise<void> {
   console.log(`length: ${seconds(samples.length).toFixed(1)}s at ${SAMPLE_RATE} Hz`)
 
   const loadStart = Date.now()
-  const model = (await pipeline('automatic-speech-recognition', 'Xenova/whisper-tiny.en', {
+  const model = (await pipeline('automatic-speech-recognition', 'onnx-community/whisper-tiny.en', {
     dtype: 'q8'
   })) as unknown as Transcriber
   console.log(`model ready in ${((Date.now() - loadStart) / 1000).toFixed(1)}s`)
@@ -128,7 +130,7 @@ async function main(): Promise<void> {
       continue
     }
     const started = Date.now()
-    const text = textOf(await model(chunk, { sampling_rate: SAMPLE_RATE }))
+    const text = textOf(await model(chunk, {}))
     const took = (Date.now() - started) / 1000
     liveCompute += took
     liveParts.push(text.trim())
@@ -141,7 +143,6 @@ async function main(): Promise<void> {
   const fullStart = Date.now()
   const fullText = textOf(
     await model(samples, {
-      sampling_rate: SAMPLE_RATE,
       return_timestamps: true,
       chunk_length_s: 30,
       stride_length_s: 5

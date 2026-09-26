@@ -1,6 +1,7 @@
 /// <reference lib="webworker" />
 
 import { env, pipeline } from '@huggingface/transformers'
+import { cleanTranscriptText } from '@shared/cleanTranscript'
 
 type Incoming =
   | { type: 'warmup' }
@@ -19,6 +20,9 @@ if (wasm) wasm.numThreads = 1
 
 let transcriber: Transcriber | null = null
 let loading: Promise<Transcriber> | null = null
+let backend: 'WebGPU' | 'WASM' | null = null
+
+const MODEL_ID = 'onnx-community/whisper-tiny.en'
 
 // One model, one GPU/WASM session: overlapping calls would contend for it and
 // arrive out of order, which for live transcription means scrambled sentences.
@@ -44,29 +48,46 @@ function loadModel(): Promise<Transcriber> {
   if (transcriber) return Promise.resolve(transcriber)
   if (loading) return loading
 
-  const options = {
-    dtype: 'q8' as const,
-    progress_callback: onProgress
-  }
-
   loading = (async () => {
-    try {
-      transcriber = (await pipeline('automatic-speech-recognition', 'Xenova/whisper-tiny.en', {
-        ...options,
-        device: 'webgpu'
-      })) as unknown as Transcriber
-    } catch {
-      transcriber = (await pipeline(
-        'automatic-speech-recognition',
-        'Xenova/whisper-tiny.en',
-        options
-      )) as unknown as Transcriber
+    // Whisper's encoder is unusually sensitive to quantization. In particular,
+    // q8 on WebGPU can return plausible-looking garbage instead of throwing.
+    // Keep the encoder at full precision and use the model export recommended
+    // by Transformers.js; fall back to the reliable CPU/WASM path when needed.
+    if ('gpu' in navigator) {
+      postMessage({ type: 'progress', message: 'Preparing the local speech model…' })
+      try {
+        transcriber = (await pipeline('automatic-speech-recognition', MODEL_ID, {
+          device: 'webgpu',
+          dtype: {
+            encoder_model: 'fp32',
+            decoder_model_merged: 'q4'
+          },
+          progress_callback: onProgress
+        })) as unknown as Transcriber
+        backend = 'WebGPU'
+      } catch {
+        postMessage({
+          type: 'progress',
+          message: 'Graphics acceleration was unavailable. Switching to local CPU transcription…'
+        })
+      }
     }
+
+    if (!transcriber) {
+      transcriber = (await pipeline('automatic-speech-recognition', MODEL_ID, {
+        device: 'wasm',
+        dtype: 'q8',
+        progress_callback: onProgress
+      })) as unknown as Transcriber
+      backend = 'WASM'
+    }
+
     return transcriber
   })().catch((error) => {
     // A temporary download/offline failure must not poison every future retry.
     loading = null
     transcriber = null
+    backend = null
     throw error
   })
 
@@ -80,23 +101,32 @@ async function handle(message: Extract<Incoming, { type: 'transcribe' }>): Promi
       postMessage({ type: 'progress', message: 'Loading local speech model…' })
     }
     const model = await loadModel()
-    if (!live) postMessage({ type: 'progress', message: 'Transcribing on this computer…' })
+    postMessage({
+      type: 'progress',
+      message: live
+        ? 'Turning the latest phrase into text…'
+        : 'Transcribing on this computer…'
+    })
 
     // whisper-tiny.en is English-only, and transformers.js rejects `language`
     // or `task` on such a model rather than ignoring them.
+    // A Float32Array input is defined by Transformers.js as 16 kHz mono PCM.
+    // `sampleRate` remains in the message protocol so malformed callers can be
+    // rejected instead of silently producing nonsense.
+    if (sampleRate !== 16000) throw new Error(`Expected 16 kHz audio, received ${sampleRate} Hz.`)
+
     const result = await model(new Float32Array(audio), {
-      sampling_rate: sampleRate,
       return_timestamps: !live,
-      chunk_length_s: 30,
-      stride_length_s: 5
+      ...(live ? {} : { chunk_length_s: 30, stride_length_s: 5 })
     })
 
-    const text = Array.isArray(result)
+    const rawText = Array.isArray(result)
       ? result
           .map((item) => item.text?.trim())
           .filter(Boolean)
           .join(' ')
       : (result.text ?? '').trim()
+    const text = cleanTranscriptText(rawText)
 
     postMessage({ type: 'done', requestId, text })
   } catch (error) {
@@ -111,9 +141,17 @@ async function handle(message: Extract<Incoming, { type: 'transcribe' }>): Promi
 self.onmessage = (event: MessageEvent<Incoming>) => {
   const data = event.data
   if (data.type === 'warmup') {
-    void loadModel().catch(() => {
-      // A failed warmup is retried by the first real segment.
-    })
+    void loadModel()
+      .then(() => postMessage({ type: 'ready', backend }))
+      .catch((error) => {
+        postMessage({
+          type: 'warmup-error',
+          message:
+            error instanceof Error
+              ? error.message
+              : 'The local speech model could not be prepared.'
+        })
+      })
     return
   }
   chain = chain.then(() => handle(data))

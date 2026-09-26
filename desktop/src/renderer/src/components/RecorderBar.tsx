@@ -37,9 +37,10 @@ export function RecorderBar({
               <p className="recorder-label">Microphone is on</p>
               <p className="recorder-note">
                 {liveEnabled
-                  ? liveQueued > 1
-                    ? `Transcribing as you go · ${liveQueued} chunks to catch up`
-                    : 'Transcribing as you go, on this computer.'
+                  ? processingMessage ||
+                    (liveQueued > 0
+                      ? `Transcribing as you go · ${liveQueued} ${liveQueued === 1 ? 'chunk' : 'chunks'} queued`
+                      : 'Listening for a complete phrase, on this computer.')
                   : 'Recording stays on this computer. Stop when class ends.'}
               </p>
             </div>

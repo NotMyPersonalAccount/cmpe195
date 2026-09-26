@@ -21,12 +21,29 @@ export class LiveTranscriber {
   private chain: Promise<void> = Promise.resolve()
   private cancelled = false
   private failed = false
-  private note: string | null = null
+  private note: string | null = 'Preparing the local speech model…'
 
   onUpdate?: (state: LiveState) => void
 
-  constructor() {
-    warmUpModel()
+  prepare(): void {
+    this.emit()
+    void warmUpModel((message) => {
+      this.note = message
+      this.emit()
+    })
+      .then(() => {
+        this.note = null
+        this.emit()
+      })
+      .catch((error) => {
+        // The first actual segment gets another attempt. Recording continues
+        // regardless, and the saved audio can always be transcribed on stop.
+        this.note =
+          error instanceof Error
+            ? `Live transcript is waiting to retry: ${error.message}`
+            : 'Live transcript is waiting to retry.'
+        this.emit()
+      })
   }
 
   push(chunk: Float32Array): void {

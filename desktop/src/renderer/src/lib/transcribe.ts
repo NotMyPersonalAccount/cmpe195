@@ -2,15 +2,23 @@ export type TranscribeProgress = (message: string) => void
 
 type WorkerResponse =
   | { type: 'progress'; message: string }
+  | { type: 'ready'; backend: 'WebGPU' | 'WASM' }
+  | { type: 'warmup-error'; message: string }
   | { type: 'done'; requestId: number; text: string }
   | { type: 'error'; requestId: number; message: string }
 
 let worker: Worker | null = null
+let workerReady = false
 let requestId = 0
 const pending = new Map<
   number,
   { resolve: (text: string) => void; reject: (error: Error) => void; onProgress?: TranscribeProgress }
 >()
+const warmups = new Set<{
+  resolve: () => void
+  reject: (error: Error) => void
+  onProgress?: TranscribeProgress
+}>()
 
 function ensureWorker(): Worker {
   if (worker) return worker
@@ -20,6 +28,19 @@ function ensureWorker(): Worker {
     const data = event.data
     if (data.type === 'progress') {
       pending.forEach((item) => item.onProgress?.(data.message))
+      warmups.forEach((item) => item.onProgress?.(data.message))
+      return
+    }
+    if (data.type === 'ready') {
+      workerReady = true
+      warmups.forEach((item) => item.resolve())
+      warmups.clear()
+      return
+    }
+    if (data.type === 'warmup-error') {
+      const error = new Error(data.message)
+      warmups.forEach((item) => item.reject(error))
+      warmups.clear()
       return
     }
     const waiter = pending.get(data.requestId)
@@ -32,15 +53,24 @@ function ensureWorker(): Worker {
     const error = new Error(event.message || 'Transcription worker failed')
     pending.forEach((item) => item.reject(error))
     pending.clear()
+    warmups.forEach((item) => item.reject(error))
+    warmups.clear()
     worker?.terminate()
     worker = null
+    workerReady = false
   }
   return worker
 }
 
 /** Starts the model download before the first segment needs it. */
-export function warmUpModel(): void {
-  ensureWorker().postMessage({ type: 'warmup' })
+export function warmUpModel(onProgress?: TranscribeProgress): Promise<void> {
+  const target = ensureWorker()
+  if (workerReady) return Promise.resolve()
+
+  return new Promise((resolve, reject) => {
+    warmups.add({ resolve, reject, onProgress })
+    target.postMessage({ type: 'warmup' })
+  })
 }
 
 export function transcribe(
@@ -67,4 +97,5 @@ export function cancelTranscription(): void {
   pending.clear()
   worker?.terminate()
   worker = null
+  workerReady = false
 }

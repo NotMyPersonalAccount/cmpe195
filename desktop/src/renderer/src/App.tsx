@@ -165,18 +165,23 @@ export default function App(): React.JSX.Element {
       setLiveText('')
       setLiveQueued(0)
       setLiveNote(null)
+      setProcessingMessage(liveEnabled ? 'Preparing the local speech model…' : '')
 
       const recorder = recorderRef.current
       if (liveEnabled) {
         const live = new LiveTranscriber()
-      live.onUpdate = (state) => {
-        setLiveText(state.text)
-        setLiveQueued(state.queued)
-        setLiveNote(state.note)
-        if (state.note) setProcessingMessage(state.note)
-      }
+        live.onUpdate = (state) => {
+          setLiveText(state.text)
+          setLiveQueued(state.queued)
+          setLiveNote(state.note)
+          setProcessingMessage(
+            state.note ??
+              (state.queued > 0 ? 'Turning the latest phrase into text…' : 'Listening for speech…')
+          )
+        }
         liveRef.current = live
         recorder.onPcm = (samples) => live.push(samples)
+        live.prepare()
       } else {
         liveRef.current = null
         recorder.onPcm = undefined

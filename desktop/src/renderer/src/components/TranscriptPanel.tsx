@@ -29,6 +29,18 @@ export function TranscriptPanel({
 }: Props): React.JSX.Element {
   const liveRef = useRef<HTMLDivElement>(null)
   const live = status === 'recording' || (status === 'processing' && liveText.length > 0)
+  const preparing = Boolean(
+    liveNote && /prepar|download|switching|loading/i.test(liveNote)
+  )
+  const liveLabel = preparing
+    ? 'Preparing'
+    : liveQueued > 0
+      ? liveQueued > 1
+        ? `Transcribing · ${liveQueued} chunks`
+        : 'Transcribing'
+      : liveText
+        ? 'Live'
+        : 'Listening'
 
   useEffect(() => {
     if (!live) return
@@ -44,7 +56,7 @@ export function TranscriptPanel({
           {live && liveEnabled ? (
             <span className="pill live">
               <span className="live-dot small" aria-hidden="true" />
-              {liveQueued > 1 ? `Catching up · ${liveQueued} chunks` : 'Live'}
+              {liveLabel}
             </span>
           ) : null}
           {status === 'ready' ? <span className="pill">Editable</span> : null}
