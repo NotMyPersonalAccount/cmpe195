@@ -41,6 +41,14 @@ describe('buildTasks', () => {
     expect(tasks.find((task) => task.description === 'Read chapter 4')?.completed).toBe(true)
   })
 
+  it('keeps stable task identities as the live transcript grows', () => {
+    const prior = existing('Read chapter 4', false)
+    const tasks = buildTasks(extracted, 'live', [prior])
+    expect(tasks[0].id).toBe(prior.id)
+    expect(tasks[0].createdAt).toBe(prior.createdAt)
+    expect(tasks[1].id).not.toBe(prior.id)
+  })
+
   it('does not resurrect a task the extractor no longer finds', () => {
     const tasks = buildTasks(extracted, 'rec', [existing('Email the TA', true)])
     expect(tasks).toHaveLength(2)

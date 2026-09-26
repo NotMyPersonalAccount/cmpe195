@@ -11,21 +11,29 @@ export function buildTasks(
   previous: Task[] = []
 ): Task[] {
   const now = Date.now()
-  const alreadyDone = new Set(
-    previous.filter((task) => task.completed).map((task) => normalize(task.description))
+  const previousByDescription = new Map(
+    previous.map((task) => [normalize(task.description), task])
   )
 
-  return extracted.map((item, index) => ({
-    id: crypto.randomUUID(),
-    recordingId,
-    description: item.description,
-    deadlineIso: item.deadlineIso,
-    deadlineLabel: item.deadlineLabel,
-    completed: alreadyDone.has(normalize(item.description)),
-    sortOrder: index,
-    createdAt: now,
-    updatedAt: now
-  }))
+  return extracted.map((item, index) => {
+    const existing = previousByDescription.get(normalize(item.description))
+    const unchanged =
+      existing?.deadlineIso === item.deadlineIso &&
+      existing?.deadlineLabel === item.deadlineLabel &&
+      existing?.sortOrder === index
+
+    return {
+      id: existing?.id ?? crypto.randomUUID(),
+      recordingId,
+      description: item.description,
+      deadlineIso: item.deadlineIso,
+      deadlineLabel: item.deadlineLabel,
+      completed: existing?.completed ?? false,
+      sortOrder: index,
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: unchanged && existing ? existing.updatedAt : now
+    }
+  })
 }
 
 function normalize(text: string): string {

@@ -492,6 +492,31 @@ audio:focus-visible {
   border: 1px solid var(--line);
 }
 
+.tasks.live-preview li {
+  grid-template-columns: auto 1fr;
+  border-color: color-mix(in srgb, var(--record) 28%, var(--line));
+  background: #fffaf7;
+}
+
+.live-task-number {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin-top: 2px;
+  border-radius: 999px;
+  color: var(--record);
+  background: var(--record-soft);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.live-task-copy {
+  margin: 2px 0 0;
+  line-height: 1.4;
+  font-weight: 600;
+}
+
 .tasks li.done .task-text {
   text-decoration: line-through;
   color: var(--ink-soft);

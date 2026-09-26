@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { Recording, RecordingSummary, StorageInfo } from '@shared/types'
+import type { Recording, RecordingSummary, StorageInfo, Task } from '@shared/types'
 import { defaultTitle } from '@shared/format'
 import { extractTasks } from '@shared/extractTasks'
 import { buildTasks } from '@shared/buildTasks'
@@ -14,6 +14,7 @@ import { MicRecorder } from './lib/recorder'
 import { decodeTo16k } from './lib/audio'
 import { cancelTranscription, transcribe } from './lib/transcribe'
 import { LiveTranscriber } from './lib/liveTranscriber'
+import { deriveLiveTasks } from './lib/liveTasks'
 
 type RecStatus = 'idle' | 'recording' | 'processing'
 
@@ -22,6 +23,7 @@ export default function App(): React.JSX.Element {
   const saveTimer = useRef<number | null>(null)
   const historySaveTimers = useRef(new Map<string, number>())
   const liveRef = useRef<LiveTranscriber | null>(null)
+  const liveStartedAtRef = useRef(Date.now())
   const previousSelectionRef = useRef<string | null>(null)
 
   const [ready, setReady] = useState(false)
@@ -41,6 +43,7 @@ export default function App(): React.JSX.Element {
   const [liveText, setLiveText] = useState('')
   const [liveQueued, setLiveQueued] = useState(0)
   const [liveNote, setLiveNote] = useState<string | null>(null)
+  const [liveTasks, setLiveTasks] = useState<Task[]>([])
 
   const locked = recStatus === 'recording'
 
@@ -143,6 +146,10 @@ export default function App(): React.JSX.Element {
     } finally {
       setRecStatus('idle')
       setProcessingMessage('')
+      setLiveText('')
+      setLiveQueued(0)
+      setLiveNote(null)
+      setLiveTasks([])
     }
   }
 
@@ -165,6 +172,8 @@ export default function App(): React.JSX.Element {
       setLiveText('')
       setLiveQueued(0)
       setLiveNote(null)
+      setLiveTasks([])
+      liveStartedAtRef.current = Date.now()
       setProcessingMessage(liveEnabled ? 'Preparing the local speech model…' : '')
 
       const recorder = recorderRef.current
@@ -174,6 +183,9 @@ export default function App(): React.JSX.Element {
           setLiveText(state.text)
           setLiveQueued(state.queued)
           setLiveNote(state.note)
+          setLiveTasks((previous) =>
+            deriveLiveTasks(state.text, liveStartedAtRef.current, previous)
+          )
           setProcessingMessage(
             state.note ??
               (state.queued > 0 ? 'Turning the latest phrase into text…' : 'Listening for speech…')
@@ -210,6 +222,7 @@ export default function App(): React.JSX.Element {
         setRecStatus('idle')
         setElapsedMs(0)
         setLiveText('')
+        setLiveTasks([])
         setBanner('That recording was empty or too quiet. Try again closer to the speaker.')
         await restorePreviousSelection()
         return
@@ -248,6 +261,10 @@ export default function App(): React.JSX.Element {
       recorderRef.current.cancel()
       setRecStatus('idle')
       setElapsedMs(0)
+      setLiveText('')
+      setLiveQueued(0)
+      setLiveNote(null)
+      setLiveTasks([])
       setBanner(error instanceof Error ? error.message : 'Could not save the recording.')
     }
   }
@@ -261,6 +278,7 @@ export default function App(): React.JSX.Element {
     setLiveText('')
     setLiveQueued(0)
     setLiveNote(null)
+    setLiveTasks([])
     setBanner('Recording discarded.')
     await restorePreviousSelection()
   }
@@ -345,6 +363,8 @@ export default function App(): React.JSX.Element {
     }
     const audio = await window.api.getAudio(selected.id)
     const blob = new Blob([audio.data], { type: audio.mime })
+    setLiveText('')
+    setLiveTasks([])
     await persist(selected, { status: 'processing', errorMessage: null })
     await processAudio(selected, blob)
   }
@@ -384,6 +404,10 @@ export default function App(): React.JSX.Element {
     if (!selected) return 'idle' as const
     return selected.status
   }, [recStatus, selected])
+
+  const showingLiveTasks =
+    liveEnabled &&
+    (recStatus === 'recording' || (recStatus === 'processing' && liveText.trim().length > 0))
 
   if (!ready) {
     return <div className="boot">Opening Catch…</div>
@@ -525,9 +549,15 @@ export default function App(): React.JSX.Element {
             }}
           />
           <TaskList
-            tasks={selected?.tasks ?? []}
+            tasks={showingLiveTasks ? liveTasks : selected?.tasks ?? []}
             recordingId={selected?.id ?? null}
-            disabled={!selected || recStatus !== 'idle' || selected.status === 'processing'}
+            disabled={
+              showingLiveTasks ||
+              !selected ||
+              recStatus !== 'idle' ||
+              selected.status === 'processing'
+            }
+            live={showingLiveTasks}
             canRebuild={Boolean(selected && selected.status === 'ready' && selected.transcript.trim())}
             onRebuild={() => void rebuildTasks()}
             onChange={(tasks) => {
