@@ -1,5 +1,4 @@
-import { buildTasks } from '@shared/buildTasks'
-import { extractTasks } from '@shared/extractTasks'
+import { finalizeTasks } from '@shared/finalizeTasks'
 import type { Task } from '@shared/types'
 
 /** Rebuilds the read-only task preview whenever the live transcript grows. */
@@ -9,9 +8,10 @@ export function deriveLiveTasks(
   previous: Task[] = []
 ): Task[] {
   if (!transcript.trim()) return []
-  return buildTasks(
-    extractTasks(transcript, new Date(recordingStartedAt)),
+  return finalizeTasks(
+    transcript,
     'live-recording',
+    new Date(recordingStartedAt),
     previous
   )
 }

@@ -3,6 +3,7 @@ import type { Recording, RecordingSummary, StorageInfo, Task } from '@shared/typ
 import { defaultTitle } from '@shared/format'
 import { extractTasks } from '@shared/extractTasks'
 import { buildTasks } from '@shared/buildTasks'
+import { finalizeTasks } from '@shared/finalizeTasks'
 import { ConsentModal } from './components/ConsentModal'
 import { PrivacyPanel } from './components/PrivacyPanel'
 import { HistoryList } from './components/HistoryList'
@@ -25,6 +26,7 @@ export default function App(): React.JSX.Element {
   const historySaveTimers = useRef(new Map<string, number>())
   const liveRef = useRef<LiveTranscriber | null>(null)
   const liveStartedAtRef = useRef(Date.now())
+  const liveTasksRef = useRef<Task[]>([])
   const liveMetricsRef = useRef({ transcriptChars: 0, taskCount: 0 })
   const previousSelectionRef = useRef<string | null>(null)
 
@@ -124,7 +126,12 @@ export default function App(): React.JSX.Element {
     [persist]
   )
 
-  async function processAudio(recording: Recording, blob: Blob, knownText?: string): Promise<void> {
+  async function processAudio(
+    recording: Recording,
+    blob: Blob,
+    knownText?: string,
+    previewTasks: Task[] = []
+  ): Promise<void> {
     setRecStatus('processing')
     setProcessingMessage(knownText ? 'Building your to-do list…' : 'Preparing audio…')
     try {
@@ -133,7 +140,7 @@ export default function App(): React.JSX.Element {
         const pcm = await decodeTo16k(blob)
         text = await transcribe(pcm, setProcessingMessage)
       }
-      const tasks = buildTasks(extractTasks(text, new Date(recording.createdAt)), recording.id)
+      const tasks = finalizeTasks(text, recording.id, new Date(recording.createdAt), previewTasks)
       await persist(recording, {
         transcript: text,
         status: 'ready',
@@ -143,6 +150,7 @@ export default function App(): React.JSX.Element {
       logDiagnostic('recording.processed', {
         usedLiveTranscript: Boolean(knownText?.trim()),
         transcriptChars: text.length,
+        previewTaskCount: previewTasks.length,
         taskCount: tasks.length
       })
       setBanner(tasks.length ? `Found ${tasks.length} task${tasks.length === 1 ? '' : 's'}. Edit anything that looks off.` : 'No tasks found. You can add them yourself.')
@@ -158,6 +166,7 @@ export default function App(): React.JSX.Element {
       setLiveQueued(0)
       setLiveNote(null)
       setLiveTasks([])
+      liveTasksRef.current = []
     }
   }
 
@@ -181,6 +190,7 @@ export default function App(): React.JSX.Element {
       setLiveQueued(0)
       setLiveNote(null)
       setLiveTasks([])
+      liveTasksRef.current = []
       liveStartedAtRef.current = Date.now()
       liveMetricsRef.current = { transcriptChars: 0, taskCount: 0 }
       setProcessingMessage(liveEnabled ? 'Preparing the local speech model…' : '')
@@ -192,25 +202,28 @@ export default function App(): React.JSX.Element {
           setLiveText(state.text)
           setLiveQueued(state.queued)
           setLiveNote(state.note)
-          setLiveTasks((previous) => {
-            const next = deriveLiveTasks(state.text, liveStartedAtRef.current, previous)
-            const metrics = liveMetricsRef.current
-            if (
-              metrics.transcriptChars !== state.text.length ||
-              metrics.taskCount !== next.length
-            ) {
-              logDiagnostic('live.updated', {
-                transcriptChars: state.text.length,
-                taskCount: next.length,
-                queuedChunks: state.queued
-              })
-              liveMetricsRef.current = {
-                transcriptChars: state.text.length,
-                taskCount: next.length
-              }
+          const nextTasks = deriveLiveTasks(
+            state.text,
+            liveStartedAtRef.current,
+            liveTasksRef.current
+          )
+          liveTasksRef.current = nextTasks
+          setLiveTasks(nextTasks)
+          const metrics = liveMetricsRef.current
+          if (
+            metrics.transcriptChars !== state.text.length ||
+            metrics.taskCount !== nextTasks.length
+          ) {
+            logDiagnostic('live.updated', {
+              transcriptChars: state.text.length,
+              taskCount: nextTasks.length,
+              queuedChunks: state.queued
+            })
+            liveMetricsRef.current = {
+              transcriptChars: state.text.length,
+              taskCount: nextTasks.length
             }
-            return next
-          })
+          }
           setProcessingMessage(
             state.note ??
               (state.queued > 0 ? 'Turning the latest phrase into text…' : 'Listening for speech…')
@@ -254,6 +267,7 @@ export default function App(): React.JSX.Element {
         setElapsedMs(0)
         setLiveText('')
         setLiveTasks([])
+        liveTasksRef.current = []
         setBanner('That recording was empty or too quiet. Try again closer to the speaker.')
         await restorePreviousSelection()
         return
@@ -285,7 +299,7 @@ export default function App(): React.JSX.Element {
         }
         liveRef.current = null
       }
-      await processAudio(created, blob, text)
+      await processAudio(created, blob, text, liveTasksRef.current)
     } catch (error) {
       live?.cancel()
       liveRef.current = null
@@ -296,6 +310,7 @@ export default function App(): React.JSX.Element {
       setLiveQueued(0)
       setLiveNote(null)
       setLiveTasks([])
+      liveTasksRef.current = []
       const message = error instanceof Error ? error.message : 'Could not save the recording.'
       logDiagnostic('recording.save_failed', { message })
       setBanner(message)
@@ -312,6 +327,7 @@ export default function App(): React.JSX.Element {
     setLiveQueued(0)
     setLiveNote(null)
     setLiveTasks([])
+    liveTasksRef.current = []
     setBanner('Recording discarded.')
     await restorePreviousSelection()
   }

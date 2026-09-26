@@ -50,7 +50,7 @@ describe('extractTasks', () => {
   })
 
   it('turns a clearly scheduled assessment into an actionable task', () => {
-    const tasks = extractTasks('Hello, hello, exam on Friday', tuesday)
+    const tasks = extractTasks('Hello, hello, exam on Friday. (mumbling)', tuesday)
 
     expect(tasks).toEqual([
       {

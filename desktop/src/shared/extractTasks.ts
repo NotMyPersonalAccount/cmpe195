@@ -1,4 +1,5 @@
 import { parseDeadline } from './deadlines.ts'
+import { cleanTranscriptText } from './cleanTranscript.ts'
 
 const TASK_VERBS =
   /\b(submit|turn in|hand in|upload|read|study|review|complete|finish|write|prepare|practice|watch|attend|meet|email|send|bring|print|register|sign up|start|work on|revise|edit|solve|implement|code|debug|memorize|outline|draft|rewrite|annotate|summarize|present|rehearse|schedule)\b/i
@@ -18,7 +19,7 @@ export type ExtractedTask = {
 
 export function extractTasks(transcript: string, recordedAt: Date = new Date()): ExtractedTask[] {
   const found: ExtractedTask[] = []
-  for (const unit of splitUnits(transcript)) {
+  for (const unit of splitUnits(cleanTranscriptText(transcript))) {
     const cleaned = cleanDescription(unit)
     if (cleaned.split(/\s+/).length < 2) continue
     const deadline = parseDeadline(cleaned, recordedAt)

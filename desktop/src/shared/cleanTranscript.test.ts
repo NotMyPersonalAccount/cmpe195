@@ -21,7 +21,7 @@ describe('cleanTranscriptText', () => {
   it('removes common non-speech annotations from the model', () => {
     expect(
       cleanTranscriptText(
-        'Tuesday exam (sighs) Thursday exam. [inaudible] (soft music) (muffled speaking) [BLANK_AUDIO]'
+        'Tuesday exam (sighs) Thursday exam. [inaudible] (soft music) (muffled speaking) [BLANK_AUDIO] (mumbling)'
       )
     ).toBe('Tuesday exam Thursday exam.')
   })

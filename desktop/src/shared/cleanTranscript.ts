@@ -7,7 +7,7 @@
  */
 export function cleanTranscriptText(input: string): string {
   const withoutNonSpeech = input.replace(
-    /\s*(?:\(|\[)(?:inaudible|unintelligible|blank[_ ]audio|muffled speaking|speaking|music|soft music|background music|applause|laughter|laughs|sighs?|silence|noise|background noise)(?:\)|\])\s*/gi,
+    /\s*(?:\(|\[)(?:inaudible|unintelligible|blank[_ ]audio|muffled speaking|speaking|mumbling|mumbles?|music|soft music|background music|applause|laughter|laughs|sighs?|silence|noise|background noise)(?:\)|\])\s*/gi,
     ' '
   )
   const withoutRepeatedSentences = collapseRepeatedSentences(withoutNonSpeech)
