@@ -44,4 +44,18 @@ describe('finalizeTasks', () => {
     expect(tasks[0].description).toBe('Submit the homework by Friday')
     expect(tasks[0].id).toBe('live-task')
   })
+
+  it('replaces a live deadline when the speaker corrects it', () => {
+    const tasks = finalizeTasks(
+      "I have an assignment due tomorrow. Actually, it should be next next day, not tomorrow.",
+      'saved-recording',
+      recordedAt,
+      [liveTask('I have an assignment due tomorrow')]
+    )
+
+    expect(tasks).toHaveLength(1)
+    expect(tasks[0].description).toBe('I have an assignment due in two days')
+    expect(tasks[0].deadlineIso).toBe('2026-09-27')
+    expect(tasks[0].id).toBe('live-task')
+  })
 })

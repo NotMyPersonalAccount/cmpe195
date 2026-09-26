@@ -36,6 +36,10 @@ export function finalizeTasks(
 }
 
 function sameTask(left: string, right: string): boolean {
+  const leftCore = taskCore(left)
+  const rightCore = taskCore(right)
+  if (leftCore.length >= 2 && leftCore.join(' ') === rightCore.join(' ')) return true
+
   const leftTokens = tokens(left)
   const rightTokens = tokens(right)
   if (leftTokens.join(' ') === rightTokens.join(' ')) return true
@@ -48,6 +52,17 @@ function sameTask(left: string, right: string): boolean {
     (leftTokens.length >= 3 && leftTokens.every((token) => rightSet.has(token))) ||
     (rightTokens.length >= 3 && rightTokens.every((token) => leftSet.has(token)))
   return subset || (union > 0 && intersection / union >= 0.8)
+}
+
+function taskCore(text: string): string[] {
+  return tokens(
+    text
+      .replace(/\b(?:due|by)\b.*$/i, '')
+      .replace(
+        /\b(?:today|tonight|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday|next week|this week|the weekend|this weekend)\b.*$/i,
+        ''
+      )
+  )
 }
 
 function tokens(text: string): string[] {

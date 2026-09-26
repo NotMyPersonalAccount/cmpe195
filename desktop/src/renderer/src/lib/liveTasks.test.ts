@@ -33,4 +33,19 @@ describe('deriveLiveTasks', () => {
     expect(first).toHaveLength(1)
     expect(afterNoise).toEqual(first)
   })
+
+  it('replaces an earlier deadline when the speaker corrects it', () => {
+    const startedAt = new Date('2026-09-25T12:00:00-07:00').getTime()
+    const first = deriveLiveTasks('I have an assignment due tomorrow.', startedAt)
+    const corrected = deriveLiveTasks(
+      "I have an assignment due tomorrow. Actually, it should be next next day, not tomorrow.",
+      startedAt,
+      first
+    )
+
+    expect(corrected).toHaveLength(1)
+    expect(corrected[0].description).toBe('I have an assignment due in two days')
+    expect(corrected[0].deadlineIso).toBe('2026-09-27')
+    expect(corrected[0].id).toBe(first[0].id)
+  })
 })

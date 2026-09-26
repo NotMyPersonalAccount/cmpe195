@@ -67,6 +67,21 @@ describe('extractTasks', () => {
     expect(tasks[0].deadlineIso).toBe('2026-09-18')
   })
 
+  it('applies a spoken deadline correction to the preceding task', () => {
+    const tasks = extractTasks(
+      "I have an assignment due tomorrow. Oh, wait, I forgot. It should be. Two days. after. So it's next next day, not tomorrow.",
+      tuesday
+    )
+
+    expect(tasks).toEqual([
+      {
+        description: 'I have an assignment due in two days',
+        deadlineIso: '2026-09-17',
+        deadlineLabel: 'next next day'
+      }
+    ])
+  })
+
   it('separates inline Whisper bullets instead of creating one giant task', () => {
     const transcript =
       '- Peanuts at the time. - Thank you. - Thanks, Sam. - Thanks, Sam. Read chapter four before class. The quiz is Thursday. Meet with the professor tomorrow.'

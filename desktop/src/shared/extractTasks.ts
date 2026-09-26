@@ -1,4 +1,4 @@
-import { parseDeadline } from './deadlines.ts'
+import { parseDeadline, type Deadline } from './deadlines.ts'
 import { cleanTranscriptText } from './cleanTranscript.ts'
 
 const TASK_VERBS =
@@ -10,6 +10,8 @@ const NEED_TO =
 const LECTURE_FILLER =
   /\b(today (we|i)|we('re| are) going to (talk|discuss|cover|look|go over)|this lecture|let's talk about|i want to talk about|as i (said|mentioned)|last (time|class|lecture))\b/i
 const QUESTION = /^\s*(who|what|when|where|why|how|does|do|did|is|are|can|could|would|will)\b.*\?$/i
+const CORRECTION_CUE =
+  /\b(?:actually|correction|i mean|scratch that|rather|instead|it should be|oh,?\s+wait|wait,?\s+(?:i|that|it)|not\s+(?:today|tonight|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday))\b/i
 
 export type ExtractedTask = {
   description: string
@@ -18,10 +20,14 @@ export type ExtractedTask = {
 }
 
 export function extractTasks(transcript: string, recordedAt: Date = new Date()): ExtractedTask[] {
+  const cleanedTranscript = cleanTranscriptText(transcript)
   const found: ExtractedTask[] = []
-  for (const unit of splitUnits(cleanTranscriptText(transcript))) {
+  for (const unit of splitUnits(cleanedTranscript)) {
     const cleaned = cleanDescription(unit)
     if (cleaned.split(/\s+/).length < 2) continue
+    // A correction sentence modifies the preceding task; it is not a second
+    // task just because phrases such as "it should be Friday" contain SHOULD.
+    if (found.length > 0 && CORRECTION_CUE.test(cleaned) && !TASK_VERBS.test(cleaned)) continue
     const deadline = parseDeadline(cleaned, recordedAt)
     if (scoreUnit(cleaned, Boolean(deadline)) < 3) continue
     found.push({
@@ -30,7 +36,51 @@ export function extractTasks(transcript: string, recordedAt: Date = new Date()):
       deadlineLabel: deadline?.label ?? null
     })
   }
+  const correction = findDeadlineCorrection(cleanedTranscript, recordedAt)
+  if (correction && found.length > 0) {
+    found[found.length - 1] = applyDeadlineCorrection(found[found.length - 1], correction)
+  }
   return dedupe(found).slice(0, 25)
+}
+
+function findDeadlineCorrection(text: string, recordedAt: Date): Deadline | null {
+  const matches = [...text.matchAll(new RegExp(CORRECTION_CUE.source, 'gi'))]
+  for (let index = matches.length - 1; index >= 0; index -= 1) {
+    const start = matches[index].index
+    if (start === undefined) continue
+    const deadline = parseDeadline(text.slice(start), recordedAt)
+    if (deadline) return deadline
+  }
+  return null
+}
+
+function applyDeadlineCorrection(task: ExtractedTask, deadline: Deadline): ExtractedTask {
+  const spokenLabel = deadline.label
+  const displayLabel = /^(?:day after tomorrow|next next day|(?:2|two) days (?:from now|later))$/i.test(spokenLabel)
+    ? 'in two days'
+    : spokenLabel
+  let description = task.description
+
+  if (task.deadlineLabel) {
+    description = description.replace(
+      new RegExp(`\\b${escapeRegExp(task.deadlineLabel)}\\b`, 'i'),
+      displayLabel
+    )
+  } else if (/\b(?:due|by)\s*$/i.test(description)) {
+    description = `${description} ${displayLabel}`
+  } else {
+    description = `${description} by ${displayLabel}`
+  }
+
+  return {
+    description,
+    deadlineIso: deadline.iso,
+    deadlineLabel: spokenLabel
+  }
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 function splitUnits(transcript: string): string[] {

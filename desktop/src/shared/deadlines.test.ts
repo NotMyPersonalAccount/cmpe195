@@ -7,6 +7,9 @@ describe('parseDeadline', () => {
   it.each([
     ['tonight', '2026-09-21'],
     ['tomorrow', '2026-09-22'],
+    ['day after tomorrow', '2026-09-23'],
+    ['next next day', '2026-09-23'],
+    ['two days from now', '2026-09-23'],
     ['Friday', '2026-09-25'],
     ['next Monday', '2026-09-28'],
     ['this week', '2026-09-25'],
@@ -27,6 +30,10 @@ describe('parseDeadline', () => {
 
   it('rejects impossible numeric dates', () => {
     expect(parseDeadline('Submit by 2/31/2027', monday)).toBeNull()
+  })
+
+  it('ignores a negated date and uses its correction', () => {
+    expect(parseDeadline('Actually Friday, not tomorrow', monday)?.iso).toBe('2026-09-25')
   })
 })
 

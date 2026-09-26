@@ -49,7 +49,12 @@ export function parseDeadline(text: string, recordedAt: Date): Deadline | null {
   const lower = text.toLowerCase()
   const hits: Candidate[] = []
   const add = (match: RegExpExecArray | null, date: Date, label?: string): void => {
-    if (!match || match.index === undefined || !isValidDate(date)) return
+    if (
+      !match ||
+      match.index === undefined ||
+      isNegated(lower, match.index) ||
+      !isValidDate(date)
+    ) return
     hits.push({
       label: (label ?? match[0]).replace(/\s+/g, ' ').trim(),
       iso: toIso(date),
@@ -59,6 +64,10 @@ export function parseDeadline(text: string, recordedAt: Date): Deadline | null {
   }
 
   add(first(/\b(today|tonight)\b/i, lower), startOfDay(recordedAt))
+  add(
+    first(/\b(day after tomorrow|in (?:2|two) days|(?:2|two) days (?:from now|later)|next next day)\b/i, lower),
+    addDays(recordedAt, 2)
+  )
   add(first(/\btomorrow\b/i, lower), addDays(recordedAt, 1))
 
   add(first(/\bnext week\b/i, lower), weekdayInWeek(recordedAt, 5, 1))
@@ -187,4 +196,8 @@ function toIso(date: Date): string {
 
 function isValidDate(date: Date): boolean {
   return !Number.isNaN(date.getTime())
+}
+
+function isNegated(text: string, index: number): boolean {
+  return /\b(?:not|isn't|is not)\s*$/.test(text.slice(Math.max(0, index - 12), index))
 }
