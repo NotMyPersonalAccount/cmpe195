@@ -106,6 +106,7 @@ function cleanDescription(text: string): string {
   while (previous !== out) {
     previous = out
     out = out
+      .replace(/^(?:hello|hi)(?:,\s*(?:hello|hi))*[,]?\s+/i, '')
       .replace(/^(ok(ay)?|so|um+|uh+|alright|all right|now|anyway|also|and|well),?\s+/i, '')
       .replace(/^(hey|everyone|class|folks|guys),?\s+/i, '')
       .replace(/^(remember|please),?\s+/i, '')
@@ -115,7 +116,19 @@ function cleanDescription(text: string): string {
       .replace(/^(make sure( you| to)?|don't forget to|do not forget to|remember to|be sure to)\s+/i, '')
       .replace(/^(the homework is to|your homework is to|the assignment is to)\s+/i, '')
   }
-  return out.replace(/\s+/g, ' ').trim()
+  return normalizeScheduledAssessment(out.replace(/\s+/g, ' ').trim())
+}
+
+function normalizeScheduledAssessment(text: string): string {
+  const match = text.match(
+    /^(?:(?:the|an?|your)\s+)?(exam|quiz|test|midterm|final|presentation)\s+(?:is\s+(?:on\s+)?|on\s+)(monday|tuesday|wednesday|thursday|friday|saturday|sunday|today|tomorrow|tonight|next week|this week|(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2})(?:[.!?])?$/i
+  )
+  if (!match) return text
+
+  const assessment = match[1].toLowerCase()
+  const deadline = match[2]
+  const action = assessment === 'presentation' ? 'Prepare for' : 'Study for'
+  return `${action} the ${assessment} by ${deadline}`
 }
 
 function dedupe(tasks: ExtractedTask[]): ExtractedTask[] {

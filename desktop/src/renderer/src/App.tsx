@@ -414,14 +414,25 @@ export default function App(): React.JSX.Element {
       if (!ok) return
     }
 
-    const extracted = extractTasks(transcript, new Date(selected.createdAt))
-    const tasks = buildTasks(extracted, selected.id, selected.tasks)
-    await persist(selected, { tasks })
-    setBanner(
-      tasks.length
-        ? `Rebuilt from the transcript: ${tasks.length} task${tasks.length === 1 ? '' : 's'}.`
-        : 'No action items found in this transcript. You can add them yourself.'
-    )
+    try {
+      const extracted = extractTasks(transcript, new Date(selected.createdAt))
+      const tasks = buildTasks(extracted, selected.id, selected.tasks)
+      await persist(selected, { tasks })
+      logDiagnostic('tasks.rebuilt', {
+        transcriptChars: transcript.length,
+        previousTaskCount: selected.tasks.length,
+        taskCount: tasks.length
+      })
+      setBanner(
+        tasks.length
+          ? `Rebuilt from the transcript: ${tasks.length} task${tasks.length === 1 ? '' : 's'}.`
+          : 'No action items found in this transcript. You can add them yourself.'
+      )
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not rebuild the to-do list.'
+      logDiagnostic('tasks.rebuild_failed', { message })
+      setBanner(`Could not rebuild the to-do list: ${message}`)
+    }
   }
 
   async function saveNow(): Promise<void> {

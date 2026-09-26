@@ -49,6 +49,18 @@ describe('extractTasks', () => {
     expect(tasks).toEqual([])
   })
 
+  it('turns a clearly scheduled assessment into an actionable task', () => {
+    const tasks = extractTasks('Hello, hello, exam on Friday', tuesday)
+
+    expect(tasks).toEqual([
+      {
+        description: 'Study for the exam by Friday',
+        deadlineIso: '2026-09-18',
+        deadlineLabel: 'friday'
+      }
+    ])
+  })
+
   it('keeps deadline statements when the due language is explicit', () => {
     const tasks = extractTasks('The assignment is due Friday.', tuesday)
     expect(tasks).toHaveLength(1)
@@ -61,6 +73,7 @@ describe('extractTasks', () => {
     const tasks = extractTasks(transcript, tuesday)
     expect(tasks.map((task) => task.description)).toEqual([
       'Read chapter four before class',
+      'Study for the quiz by Thursday',
       'Meet with the professor tomorrow'
     ])
   })
@@ -71,8 +84,10 @@ describe('extractTasks', () => {
     const tasks = extractTasks(transcript, tuesday)
 
     expect(tasks.map((task) => task.description)).toEqual([
+      'Study for the exam by Tuesday',
       'Submit the homework by Friday',
       'Read chapter four before class',
+      'Study for the quiz by Thursday',
       'Meet with the professor tomorrow'
     ])
   })
