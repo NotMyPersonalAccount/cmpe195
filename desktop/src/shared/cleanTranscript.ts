@@ -6,7 +6,12 @@
  * unusable, so collapse only unmistakable consecutive repetition here.
  */
 export function cleanTranscriptText(input: string): string {
-  const words = input.replace(/\s+/g, ' ').trim().split(' ').filter(Boolean)
+  const withoutNonSpeech = input.replace(
+    /\s*(?:\(|\[)(?:inaudible|unintelligible|blank[_ ]audio|muffled speaking|speaking|music|soft music|background music|applause|laughter|laughs|sighs?|silence|noise|background noise)(?:\)|\])\s*/gi,
+    ' '
+  )
+  const withoutRepeatedSentences = collapseRepeatedSentences(withoutNonSpeech)
+  const words = withoutRepeatedSentences.replace(/\s+/g, ' ').trim().split(' ').filter(Boolean)
   if (words.length === 0) return ''
 
   const collapsed: string[] = []
@@ -35,6 +40,27 @@ export function cleanTranscriptText(input: string): string {
   }
 
   return collapsed.join(' ')
+}
+
+function collapseRepeatedSentences(input: string): string {
+  const sentences = input
+    .replace(/\s+/g, ' ')
+    .trim()
+    .split(/(?<=[.!?])\s+(?=(?:[-*•]\s*)?[A-Z“"'])/)
+
+  const kept: string[] = []
+  let previous = ''
+  for (const sentence of sentences) {
+    const normalized = sentence
+      .replace(/^[-*•]\s*/, '')
+      .toLocaleLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, ' ')
+      .trim()
+    if (normalized && normalized === previous) continue
+    kept.push(sentence.trim())
+    previous = normalized
+  }
+  return kept.join(' ')
 }
 
 function normalize(word: string): string {

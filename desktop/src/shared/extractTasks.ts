@@ -37,22 +37,61 @@ function splitUnits(transcript: string): string[] {
   for (const line of transcript.replace(/\r/g, '').split(/\n+/)) {
     const trimmed = line.trim()
     if (!trimmed) continue
-    if (/^(\d+[).:]|[-*•])\s+/.test(trimmed)) {
-      units.push(trimmed.replace(/^(\d+[).:]|[-*•])\s+/, ''))
-      continue
-    }
-    for (const sentence of trimmed.split(/(?<=[.!?])\s+(?=[A-Z“"'])/)) {
-      units.push(...sentence.split(/\s+;\s+|\s+—\s+/))
+
+    // Whisper often emits several spoken turns as inline bullets on one line:
+    // "- Thanks. - Read chapter 4. - Submit Friday." Treat every marker as a
+    // boundary instead of assuming the first dash makes the whole line one item.
+    const withoutNumberMarker = trimmed.replace(/^\d+[).:]\s+/, '')
+    const bulletParts = withoutNumberMarker
+      .split(/(?:^|\s+)[-*•]\s+/)
+      .map((part) => part.trim())
+      .filter(Boolean)
+    const parts = bulletParts.length > 0 ? bulletParts : [trimmed]
+
+    for (const part of parts) {
+      for (const sentence of part.split(/(?<=[.!?])\s+(?=[A-Z“"'])/)) {
+        for (const clause of sentence.split(/\s+;\s+|\s+—\s+/)) {
+          units.push(...splitChainedTasks(clause))
+        }
+      }
     }
   }
   return units.map((unit) => unit.trim().replace(/^["'“]+|["'”]+$/g, '')).filter(Boolean)
 }
 
+function splitChainedTasks(text: string): string[] {
+  const units: string[] = []
+  let remaining = text
+  const boundary =
+    /\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday|today|tomorrow|tonight|next week|this week|the weekend|this weekend)\s+(?:to\s+)?(?=(?:submit|turn in|hand in|upload|read|study|review|complete|finish|write|prepare|practice|watch|attend|meet|email|send|bring|print|register|start|revise|edit|solve|implement|code|debug|memorize|outline|draft|annotate|summarize|present|rehearse|schedule)\b)/i
+
+  // A live Whisper chunk can turn "by Friday. Read chapter four" into
+  // "by Friday to read chapter four", or "Thursday. Meet..." into
+  // "Thursday meet...". Recover either missing sentence boundary.
+  while (true) {
+    const match = boundary.exec(remaining)
+    if (!match) break
+    units.push(remaining.slice(0, match.index + match[1].length))
+    remaining = remaining.slice(match.index + match[0].length)
+  }
+  units.push(remaining)
+  return units.filter((unit) => unit.trim())
+}
+
 function scoreUnit(text: string, hasDeadline: boolean): number {
+  const hasTaskVerb = TASK_VERBS.test(text)
+  const hasDirective = NEED_TO.test(text)
+  const hasExplicitDueLanguage = /\b(due|deadline|assigned)\b/i.test(text)
+
+  // A noun plus a weekday is often just lecture context ("exam Tuesday"),
+  // not an instruction. Require an action or explicit due-date wording before
+  // creating a to-do; this is especially important for imperfect live speech.
+  if (!hasTaskVerb && !hasDirective && !hasExplicitDueLanguage) return -Infinity
+
   let score = 0
-  if (TASK_VERBS.test(text)) score += 2
+  if (hasTaskVerb) score += 2
   if (TASK_NOUNS.test(text)) score += 2
-  if (NEED_TO.test(text)) score += 2
+  if (hasDirective) score += 2
   if (hasDeadline) score += 2
   if (/\b(due|deadline|by \w+day)\b/i.test(text)) score += 1
   if (QUESTION.test(text) || text.trim().endsWith('?')) score -= 3

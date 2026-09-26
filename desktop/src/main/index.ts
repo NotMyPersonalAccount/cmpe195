@@ -34,6 +34,13 @@ function createWindow(): void {
     mainWindow = null
   })
 
+  if (is.dev) {
+    mainWindow.webContents.on('console-message', (details) => {
+      const message = details.message
+      if (message.startsWith('[Catch]')) console.log(message)
+    })
+  }
+
   mainWindow.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url)
     return { action: 'deny' }

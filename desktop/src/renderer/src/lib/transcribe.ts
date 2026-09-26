@@ -1,3 +1,5 @@
+import { logDiagnostic } from './diagnostics'
+
 export type TranscribeProgress = (message: string) => void
 
 type WorkerResponse =
@@ -12,7 +14,14 @@ let workerReady = false
 let requestId = 0
 const pending = new Map<
   number,
-  { resolve: (text: string) => void; reject: (error: Error) => void; onProgress?: TranscribeProgress }
+  {
+    resolve: (text: string) => void
+    reject: (error: Error) => void
+    onProgress?: TranscribeProgress
+    live: boolean
+    startedAt: number
+    audioSeconds: number
+  }
 >()
 const warmups = new Set<{
   resolve: () => void
@@ -33,12 +42,14 @@ function ensureWorker(): Worker {
     }
     if (data.type === 'ready') {
       workerReady = true
+      logDiagnostic('model.ready', { backend: data.backend })
       warmups.forEach((item) => item.resolve())
       warmups.clear()
       return
     }
     if (data.type === 'warmup-error') {
       const error = new Error(data.message)
+      logDiagnostic('model.warmup_failed', { message: data.message })
       warmups.forEach((item) => item.reject(error))
       warmups.clear()
       return
@@ -46,8 +57,21 @@ function ensureWorker(): Worker {
     const waiter = pending.get(data.requestId)
     if (!waiter) return
     pending.delete(data.requestId)
-    if (data.type === 'done') waiter.resolve(data.text)
-    else waiter.reject(new Error(data.message))
+    if (data.type === 'done') {
+      logDiagnostic('transcription.complete', {
+        mode: waiter.live ? 'live' : 'full',
+        audioSeconds: Number(waiter.audioSeconds.toFixed(1)),
+        elapsedMs: Date.now() - waiter.startedAt,
+        transcriptChars: data.text.length
+      })
+      waiter.resolve(data.text)
+    } else {
+      logDiagnostic('transcription.failed', {
+        mode: waiter.live ? 'live' : 'full',
+        message: data.message
+      })
+      waiter.reject(new Error(data.message))
+    }
   }
   worker.onerror = (event) => {
     const error = new Error(event.message || 'Transcription worker failed')
@@ -82,7 +106,14 @@ export function transcribe(
   const target = ensureWorker()
 
   return new Promise((resolve, reject) => {
-    pending.set(id, { resolve, reject, onProgress })
+    pending.set(id, {
+      resolve,
+      reject,
+      onProgress,
+      live,
+      startedAt: Date.now(),
+      audioSeconds: audio.length / 16000
+    })
     if (!live) onProgress?.('Starting local transcription…')
     const copy = audio.slice()
     target.postMessage(

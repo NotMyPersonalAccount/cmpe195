@@ -41,6 +41,53 @@ describe('extractTasks', () => {
     expect(tasks[0].description).toMatch(/submit the assignment/i)
   })
 
+  it('does not turn a garbled exam date into an action item', () => {
+    const tasks = extractTasks(
+      'Tuesday exam (sighs) Thursday exam. Exam Tuesday exam on Tuesday [inaudible].',
+      tuesday
+    )
+    expect(tasks).toEqual([])
+  })
+
+  it('keeps deadline statements when the due language is explicit', () => {
+    const tasks = extractTasks('The assignment is due Friday.', tuesday)
+    expect(tasks).toHaveLength(1)
+    expect(tasks[0].deadlineIso).toBe('2026-09-18')
+  })
+
+  it('separates inline Whisper bullets instead of creating one giant task', () => {
+    const transcript =
+      '- Peanuts at the time. - Thank you. - Thanks, Sam. - Thanks, Sam. Read chapter four before class. The quiz is Thursday. Meet with the professor tomorrow.'
+    const tasks = extractTasks(transcript, tuesday)
+    expect(tasks.map((task) => task.description)).toEqual([
+      'Read chapter four before class',
+      'Meet with the professor tomorrow'
+    ])
+  })
+
+  it('recovers a sentence boundary lost between live tasks', () => {
+    const transcript =
+      'The exam is Tuesday. Please submit the homework by Friday to read chapter four before class. The quiz is Thursday. Meet with the professor tomorrow.'
+    const tasks = extractTasks(transcript, tuesday)
+
+    expect(tasks.map((task) => task.description)).toEqual([
+      'Submit the homework by Friday',
+      'Read chapter four before class',
+      'Meet with the professor tomorrow'
+    ])
+  })
+
+  it('does not merge deadline context into a following action', () => {
+    const tasks = extractTasks(
+      'Re chapter four before class. The quizzes Thursday meet with the professor tomorrow.',
+      tuesday
+    )
+
+    expect(tasks.map((task) => task.description)).toEqual([
+      'Meet with the professor tomorrow'
+    ])
+  })
+
   it('strips the lead-in so the task reads like a to-do', () => {
     const transcript = [
       'Before I forget, please submit the assignment by Friday.',

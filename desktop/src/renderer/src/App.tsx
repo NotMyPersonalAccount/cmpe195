@@ -15,6 +15,7 @@ import { decodeTo16k } from './lib/audio'
 import { cancelTranscription, transcribe } from './lib/transcribe'
 import { LiveTranscriber } from './lib/liveTranscriber'
 import { deriveLiveTasks } from './lib/liveTasks'
+import { logDiagnostic } from './lib/diagnostics'
 
 type RecStatus = 'idle' | 'recording' | 'processing'
 
@@ -24,6 +25,7 @@ export default function App(): React.JSX.Element {
   const historySaveTimers = useRef(new Map<string, number>())
   const liveRef = useRef<LiveTranscriber | null>(null)
   const liveStartedAtRef = useRef(Date.now())
+  const liveMetricsRef = useRef({ transcriptChars: 0, taskCount: 0 })
   const previousSelectionRef = useRef<string | null>(null)
 
   const [ready, setReady] = useState(false)
@@ -138,9 +140,15 @@ export default function App(): React.JSX.Element {
         errorMessage: null,
         tasks
       })
+      logDiagnostic('recording.processed', {
+        usedLiveTranscript: Boolean(knownText?.trim()),
+        transcriptChars: text.length,
+        taskCount: tasks.length
+      })
       setBanner(tasks.length ? `Found ${tasks.length} task${tasks.length === 1 ? '' : 's'}. Edit anything that looks off.` : 'No tasks found. You can add them yourself.')
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Transcription failed.'
+      logDiagnostic('recording.processing_failed', { message })
       await persist(recording, { status: 'error', errorMessage: message })
       setBanner(message)
     } finally {
@@ -174,6 +182,7 @@ export default function App(): React.JSX.Element {
       setLiveNote(null)
       setLiveTasks([])
       liveStartedAtRef.current = Date.now()
+      liveMetricsRef.current = { transcriptChars: 0, taskCount: 0 }
       setProcessingMessage(liveEnabled ? 'Preparing the local speech model…' : '')
 
       const recorder = recorderRef.current
@@ -183,9 +192,25 @@ export default function App(): React.JSX.Element {
           setLiveText(state.text)
           setLiveQueued(state.queued)
           setLiveNote(state.note)
-          setLiveTasks((previous) =>
-            deriveLiveTasks(state.text, liveStartedAtRef.current, previous)
-          )
+          setLiveTasks((previous) => {
+            const next = deriveLiveTasks(state.text, liveStartedAtRef.current, previous)
+            const metrics = liveMetricsRef.current
+            if (
+              metrics.transcriptChars !== state.text.length ||
+              metrics.taskCount !== next.length
+            ) {
+              logDiagnostic('live.updated', {
+                transcriptChars: state.text.length,
+                taskCount: next.length,
+                queuedChunks: state.queued
+              })
+              liveMetricsRef.current = {
+                transcriptChars: state.text.length,
+                taskCount: next.length
+              }
+            }
+            return next
+          })
           setProcessingMessage(
             state.note ??
               (state.queued > 0 ? 'Turning the latest phrase into text…' : 'Listening for speech…')
@@ -199,6 +224,7 @@ export default function App(): React.JSX.Element {
         recorder.onPcm = undefined
       }
       await recorder.start()
+      logDiagnostic('recording.started', { liveTranscript: liveEnabled })
       setElapsedMs(0)
       setRecStatus('recording')
       previousSelectionRef.current = selected?.id ?? null
@@ -216,6 +242,11 @@ export default function App(): React.JSX.Element {
     const live = liveRef.current
     try {
       const { blob, durationMs, mime, hasSpeech } = await recorderRef.current.stop()
+      logDiagnostic('recording.stopped', {
+        durationMs,
+        audioBytes: blob.size,
+        speechDetected: hasSpeech
+      })
       if (blob.size < 1000 || durationMs < 800 || hasSpeech === false) {
         live?.cancel()
         liveRef.current = null
@@ -265,7 +296,9 @@ export default function App(): React.JSX.Element {
       setLiveQueued(0)
       setLiveNote(null)
       setLiveTasks([])
-      setBanner(error instanceof Error ? error.message : 'Could not save the recording.')
+      const message = error instanceof Error ? error.message : 'Could not save the recording.'
+      logDiagnostic('recording.save_failed', { message })
+      setBanner(message)
     }
   }
 

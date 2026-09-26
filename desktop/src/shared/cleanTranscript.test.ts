@@ -17,4 +17,20 @@ describe('cleanTranscriptText', () => {
     const paragraph = 'Please read chapter four and submit the worksheet by Friday.'
     expect(cleanTranscriptText(`${paragraph} ${paragraph}`)).toBe(paragraph)
   })
+
+  it('removes common non-speech annotations from the model', () => {
+    expect(
+      cleanTranscriptText(
+        'Tuesday exam (sighs) Thursday exam. [inaudible] (soft music) (muffled speaking) [BLANK_AUDIO]'
+      )
+    ).toBe('Tuesday exam Thursday exam.')
+  })
+
+  it('collapses repeated sentences from a noisy live chunk', () => {
+    expect(
+      cleanTranscriptText(
+        '- Thank you. - Thanks, Sam. - Thanks, Sam. - Thanks, Sam. Read chapter four.'
+      )
+    ).toBe('- Thank you. - Thanks, Sam. Read chapter four.')
+  })
 })
