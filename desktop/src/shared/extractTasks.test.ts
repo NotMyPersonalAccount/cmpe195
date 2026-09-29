@@ -82,6 +82,30 @@ describe('extractTasks', () => {
     ])
   })
 
+  it('does not apply an earlier correction to a later task', () => {
+    const tasks = extractTasks(
+      'Submit the paper tomorrow. Actually, Friday instead. Read chapter 4 by Tuesday.',
+      tuesday
+    )
+
+    expect(tasks.map((task) => [task.description, task.deadlineIso])).toEqual([
+      ['Submit the paper Friday', '2026-09-18'],
+      ['Read chapter 4 by Tuesday', '2026-09-15']
+    ])
+  })
+
+  it('removes a deadline when the speaker only negates it', () => {
+    const tasks = extractTasks('Submit the paper tomorrow. Actually, not tomorrow.', tuesday)
+
+    expect(tasks).toEqual([
+      {
+        description: 'Submit the paper',
+        deadlineIso: null,
+        deadlineLabel: null
+      }
+    ])
+  })
+
   it('separates inline Whisper bullets instead of creating one giant task', () => {
     const transcript =
       '- Peanuts at the time. - Thank you. - Thanks, Sam. - Thanks, Sam. Read chapter four before class. The quiz is Thursday. Meet with the professor tomorrow.'
