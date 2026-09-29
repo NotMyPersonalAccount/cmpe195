@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { findCutPoint, isProbablySilent } from './segmentAudio'
+import { findCutPoint, isProbablySilent, splitRecordingAudio } from './segmentAudio'
 
 const RATE = 16000
 
@@ -61,5 +61,26 @@ describe('isProbablySilent', () => {
 
   it('treats speech-level audio as not silent', () => {
     expect(isProbablySilent(build([{ seconds: 2, amplitude: 0.2 }]))).toBe(false)
+  })
+})
+
+describe('splitRecordingAudio', () => {
+  it('replays a saved recording through pause-aware live-sized segments', () => {
+    const samples = build([
+      { seconds: 9, amplitude: 0.3 },
+      { seconds: 0.5, amplitude: 0 },
+      { seconds: 9, amplitude: 0.3 },
+      { seconds: 0.5, amplitude: 0 },
+      { seconds: 3, amplitude: 0.3 }
+    ])
+
+    const segments = splitRecordingAudio(samples, RATE)
+
+    expect(segments).toHaveLength(3)
+    expect(segments.reduce((sum, segment) => sum + segment.length, 0)).toBe(samples.length)
+  })
+
+  it('drops a completely silent recording', () => {
+    expect(splitRecordingAudio(build([{ seconds: 10, amplitude: 0 }]), RATE)).toEqual([])
   })
 })

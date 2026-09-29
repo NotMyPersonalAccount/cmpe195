@@ -61,6 +61,23 @@ describe('extractTasks', () => {
     ])
   })
 
+  it('extracts multiple scheduled assessments and assignments from live speech', () => {
+    const tasks = extractTasks(
+      'I have a quiz on Wednesday in a midterm on Thursday. Oh, so another assignment on Saturday.',
+      tuesday
+    )
+
+    expect(tasks.map((task) => [task.description, task.deadlineIso])).toEqual([
+      ['Study for the quiz by Wednesday', '2026-09-16'],
+      ['Study for the midterm by Thursday', '2026-09-17'],
+      ['Complete the assignment by Saturday', '2026-09-19']
+    ])
+  })
+
+  it('does not treat ordinary work in a dated project as an assigned task', () => {
+    expect(extractTasks('I worked in a project on Friday.', tuesday)).toEqual([])
+  })
+
   it('keeps deadline statements when the due language is explicit', () => {
     const tasks = extractTasks('The assignment is due Friday.', tuesday)
     expect(tasks).toHaveLength(1)

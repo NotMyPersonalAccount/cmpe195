@@ -65,3 +65,24 @@ export function isProbablySilent(samples: Float32Array, silenceRms = 0.008): boo
   if (samples.length === 0) return true
   return windowRms(samples, 0, samples.length) <= silenceRms
 }
+
+/** Splits a saved recording at the same pause-aware boundaries used live. */
+export function splitRecordingAudio(
+  samples: Float32Array,
+  sampleRate: number,
+  options: SegmentOptions = {}
+): Float32Array[] {
+  const segments: Float32Array[] = []
+  let offset = 0
+
+  while (offset < samples.length) {
+    const remaining = samples.subarray(offset)
+    const cut = findCutPoint(remaining, sampleRate, options)
+    const length = cut > 0 ? cut : remaining.length
+    const segment = samples.slice(offset, offset + length)
+    if (!isProbablySilent(segment)) segments.push(segment)
+    offset += length
+  }
+
+  return segments
+}

@@ -12,6 +12,10 @@ const LECTURE_FILLER =
 const QUESTION = /^\s*(who|what|when|where|why|how|does|do|did|is|are|can|could|would|will)\b.*\?$/i
 const CORRECTION_CUE =
   /\b(?:actually|correction|i mean|scratch that|make that|change that to|move that to|rather|instead|it should be|oh,?\s+wait|wait,?\s+(?:i|that|it)|no,?|sorry,?|not\s+(?:today|tonight|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday))\b/i
+const SCHEDULED_NOUN =
+  '(quiz|exam|test|midterm|final|presentation|assignment|homework|project|paper|essay|report|lab|problem set|worksheet)'
+const SPOKEN_DATE =
+  '(today|tonight|tomorrow|day after tomorrow|next next day|next week|this week|next weekend|this weekend|the weekend|monday|tuesday|wednesday|thursday|friday|saturday|sunday|(?:january|february|march|april|may|june|july|august|september|october|november|december)\\s+\\d{1,2}(?:st|nd|rd|th)?|\\d{1,2}[/-]\\d{1,2}(?:[/-]\\d{2,4})?|in\\s+(?:\\d+|a|one|two|three|four|five|six|seven)\\s+(?:days?|weeks?))'
 
 export type ExtractedTask = {
   description: string
@@ -26,6 +30,12 @@ export function extractTasks(transcript: string, recordedAt: Date = new Date()):
   for (const unit of splitUnits(cleanedTranscript)) {
     const cleaned = cleanDescription(unit)
     if (cleaned.split(/\s+/).length < 2) continue
+    const scheduled = extractScheduledTasks(cleaned, recordedAt)
+    if (scheduled.length > 0) {
+      found.push(...scheduled)
+      correctionWindow = 0
+      continue
+    }
     const deadline = parseDeadline(cleaned, recordedAt)
     const hasCorrectionCue = CORRECTION_CUE.test(cleaned)
     const hasTaskVerb = TASK_VERBS.test(cleaned)
@@ -112,6 +122,41 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
+function extractScheduledTasks(text: string, recordedAt: Date): ExtractedTask[] {
+  const pattern = new RegExp(
+    `(^|\\b(and|plus|also|in)\\s+)(?:(?:i|we)\\s+(?:have|got)\\s+|there(?:'s| is)\\s+)?(?:(?:the|an?|your|another)\\s+)?${SCHEDULED_NOUN}\\s+(?:is\\s+(?:on\\s+)?|scheduled\\s+(?:on\\s+)?|on\\s+|by\\s+)${SPOKEN_DATE}`,
+    'gi'
+  )
+  const tasks: ExtractedTask[] = []
+
+  for (const match of text.matchAll(pattern)) {
+    const separator = match[2]?.toLowerCase()
+    // Tiny Whisper occasionally hears "and a midterm" as "in a midterm".
+    // Only accept that repair after a clear scheduled item in the same unit,
+    // so ordinary phrases such as "worked in a project on Friday" stay notes.
+    if (separator === 'in' && tasks.length === 0) continue
+
+    const noun = match[3].toLowerCase()
+    const dateText = match[4]
+    const deadline = parseDeadline(dateText, recordedAt)
+    if (!deadline) continue
+
+    const action =
+      noun === 'presentation'
+        ? 'Prepare for'
+        : /^(?:quiz|exam|test|midterm|final)$/.test(noun)
+          ? 'Study for'
+          : 'Complete'
+    tasks.push({
+      description: `${action} the ${noun} by ${capitalizeDateLabel(dateText)}`,
+      deadlineIso: deadline.iso,
+      deadlineLabel: deadline.label
+    })
+  }
+
+  return tasks
+}
+
 function splitUnits(transcript: string): string[] {
   const units: string[] = []
   for (const line of transcript.replace(/\r/g, '').split(/\n+/)) {
@@ -188,6 +233,7 @@ function cleanDescription(text: string): string {
     out = out
       .replace(/^(?:hello|hi)(?:,\s*(?:hello|hi))*[,]?\s+/i, '')
       .replace(/^(ok(ay)?|so|um+|uh+|alright|all right|now|anyway|also|and|well),?\s+/i, '')
+      .replace(/^oh,?\s+/i, '')
       .replace(/^(hey|everyone|class|folks|guys),?\s+/i, '')
       .replace(/^(remember|please),?\s+/i, '')
       .replace(/^(before i forget|quick reminder|just a reminder|as a reminder|a reminder|reminder|one more thing|last thing|first of all|finally)[,.:]?\s+/i, '')

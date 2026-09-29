@@ -13,7 +13,7 @@ import { TaskList } from './components/TaskList'
 import { AudioPlayer } from './components/AudioPlayer'
 import { MicRecorder } from './lib/recorder'
 import { decodeTo16k } from './lib/audio'
-import { cancelTranscription, transcribe } from './lib/transcribe'
+import { cancelTranscription, transcribeRecording } from './lib/transcribe'
 import { LiveTranscriber } from './lib/liveTranscriber'
 import { deriveLiveTasks } from './lib/liveTasks'
 import { logDiagnostic } from './lib/diagnostics'
@@ -138,7 +138,19 @@ export default function App(): React.JSX.Element {
       let text = knownText?.trim() ?? ''
       if (!text) {
         const pcm = await decodeTo16k(blob)
-        text = await transcribe(pcm, setProcessingMessage)
+        text = await transcribeRecording(pcm, setProcessingMessage)
+      }
+      if (!text.trim()) {
+        if (recording.transcript.trim()) {
+          await persist(recording, { status: 'ready', errorMessage: null })
+          logDiagnostic('recording.empty_retry_preserved', {
+            transcriptChars: recording.transcript.length,
+            taskCount: recording.tasks.length
+          })
+          setBanner('The new pass did not hear any words, so your existing transcript and tasks were kept.')
+          return
+        }
+        throw new Error('No speech could be transcribed. Try again closer to the speaker.')
       }
       const tasks = finalizeTasks(text, recording.id, new Date(recording.createdAt), previewTasks)
       await persist(recording, {

@@ -1,4 +1,6 @@
 import { logDiagnostic } from './diagnostics'
+import { cleanTranscriptText } from '@shared/cleanTranscript'
+import { splitRecordingAudio } from '@shared/segmentAudio'
 
 export type TranscribeProgress = (message: string) => void
 
@@ -121,6 +123,37 @@ export function transcribe(
       [copy.buffer]
     )
   })
+}
+
+type TranscriptionRunner = typeof transcribe
+
+/**
+ * Transcribes saved audio in one pass, then retries with the proven live
+ * segmentation path if the model unexpectedly returns no words.
+ */
+export async function transcribeRecording(
+  audio: Float32Array,
+  onProgress?: TranscribeProgress,
+  run: TranscriptionRunner = transcribe
+): Promise<string> {
+  const fullText = (await run(audio, onProgress, false)).trim()
+  if (fullText) return fullText
+
+  const segments = splitRecordingAudio(audio, 16000)
+  if (segments.length === 0) return ''
+
+  logDiagnostic('transcription.retry_segmented', {
+    audioSeconds: Number((audio.length / 16000).toFixed(1)),
+    segmentCount: segments.length
+  })
+
+  const text: string[] = []
+  for (let index = 0; index < segments.length; index += 1) {
+    onProgress?.(`Retrying locally in shorter sections… ${index + 1}/${segments.length}`)
+    const segmentText = (await run(segments[index], undefined, true)).trim()
+    if (segmentText) text.push(segmentText)
+  }
+  return cleanTranscriptText(text.join(' '))
 }
 
 export function cancelTranscription(): void {
