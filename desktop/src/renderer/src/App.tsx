@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Recording, RecordingSummary, StorageInfo, Task } from '@shared/types'
 import { defaultTitle } from '@shared/format'
-import { extractTasks } from '@shared/extractTasks'
+import { diagnoseTaskExtraction, extractTasks } from '@shared/extractTasks'
 import { buildTasks } from '@shared/buildTasks'
 import { finalizeTasks } from '@shared/finalizeTasks'
 import { ConsentModal } from './components/ConsentModal'
@@ -89,6 +89,28 @@ export default function App(): React.JSX.Element {
     }
   }, [])
 
+  useEffect(() => {
+    const onError = (event: ErrorEvent): void => {
+      logDiagnostic('renderer.error', {
+        message: event.message || 'Unknown renderer error',
+        source: event.filename?.split('/').pop() ?? null,
+        line: event.lineno,
+        column: event.colno
+      })
+    }
+    const onUnhandled = (event: PromiseRejectionEvent): void => {
+      logDiagnostic('renderer.unhandled_rejection', {
+        message: event.reason instanceof Error ? event.reason.message : String(event.reason)
+      })
+    }
+    window.addEventListener('error', onError)
+    window.addEventListener('unhandledrejection', onUnhandled)
+    return () => {
+      window.removeEventListener('error', onError)
+      window.removeEventListener('unhandledrejection', onUnhandled)
+    }
+  }, [])
+
   const persist = useCallback(
     async (recording: Recording, extra?: Partial<Recording>) => {
       // A queued autosave holds an older copy of this recording, so let the
@@ -133,13 +155,13 @@ export default function App(): React.JSX.Element {
     previewTasks: Task[] = []
   ): Promise<void> {
     setRecStatus('processing')
-    setProcessingMessage(knownText ? 'Building your to-do list…' : 'Preparing audio…')
+    setProcessingMessage(knownText ? 'Refining the live transcript…' : 'Preparing audio…')
     try {
-      let text = knownText?.trim() ?? ''
-      if (!text) {
-        const pcm = await decodeTo16k(blob)
-        text = await transcribeRecording(pcm, setProcessingMessage)
-      }
+      const liveText = knownText?.trim() ?? ''
+      let text = liveText
+      const pcm = await decodeTo16k(blob)
+      const refinedText = (await transcribeRecording(pcm, setProcessingMessage)).trim()
+      if (refinedText) text = refinedText
       if (!text.trim()) {
         if (recording.transcript.trim()) {
           await persist(recording, { status: 'ready', errorMessage: null })
@@ -160,10 +182,13 @@ export default function App(): React.JSX.Element {
         tasks
       })
       logDiagnostic('recording.processed', {
-        usedLiveTranscript: Boolean(knownText?.trim()),
+        usedLiveFallback: Boolean(liveText && !refinedText),
+        liveTranscriptChars: liveText.length,
+        refinedTranscriptChars: refinedText.length,
         transcriptChars: text.length,
         previewTaskCount: previewTasks.length,
-        taskCount: tasks.length
+        finalTaskCount: tasks.length,
+        ...diagnoseTaskExtraction(text, new Date(recording.createdAt))
       })
       setBanner(tasks.length ? `Found ${tasks.length} task${tasks.length === 1 ? '' : 's'}. Edit anything that looks off.` : 'No tasks found. You can add them yourself.')
     } catch (error) {
@@ -208,6 +233,12 @@ export default function App(): React.JSX.Element {
       setProcessingMessage(liveEnabled ? 'Preparing the local speech model…' : '')
 
       const recorder = recorderRef.current
+      recorder.onLiveUnavailable = liveEnabled
+        ? (message) => {
+            setLiveNote(message)
+            setProcessingMessage(message)
+          }
+        : undefined
       if (liveEnabled) {
         const live = new LiveTranscriber()
         live.onUpdate = (state) => {
@@ -228,8 +259,9 @@ export default function App(): React.JSX.Element {
           ) {
             logDiagnostic('live.updated', {
               transcriptChars: state.text.length,
-              taskCount: nextTasks.length,
-              queuedChunks: state.queued
+              liveTaskCount: nextTasks.length,
+              queuedChunks: state.queued,
+              ...diagnoseTaskExtraction(state.text, new Date(liveStartedAtRef.current))
             })
             liveMetricsRef.current = {
               transcriptChars: state.text.length,
@@ -259,6 +291,7 @@ export default function App(): React.JSX.Element {
       liveRef.current?.cancel()
       liveRef.current = null
       const message = error instanceof Error ? error.message : 'Could not start the microphone.'
+      logDiagnostic('recording.start_failed', { message })
       setBanner(message)
     }
   }
@@ -266,11 +299,12 @@ export default function App(): React.JSX.Element {
   async function stopRecording(): Promise<void> {
     const live = liveRef.current
     try {
-      const { blob, durationMs, mime, hasSpeech } = await recorderRef.current.stop()
+      const { blob, durationMs, mime, hasSpeech, speechMs } = await recorderRef.current.stop()
       logDiagnostic('recording.stopped', {
         durationMs,
         audioBytes: blob.size,
-        speechDetected: hasSpeech
+        speechDetected: hasSpeech,
+        speechMs
       })
       if (blob.size < 1000 || durationMs < 800 || hasSpeech === false) {
         live?.cancel()
@@ -449,7 +483,8 @@ export default function App(): React.JSX.Element {
       logDiagnostic('tasks.rebuilt', {
         transcriptChars: transcript.length,
         previousTaskCount: selected.tasks.length,
-        taskCount: tasks.length
+        finalTaskCount: tasks.length,
+        ...diagnoseTaskExtraction(transcript, new Date(selected.createdAt))
       })
       setBanner(
         tasks.length

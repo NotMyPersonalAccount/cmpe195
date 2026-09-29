@@ -43,7 +43,10 @@ export type NewTaskInput = {
 }
 
 export type PreferenceKey = 'consentAccepted' | 'liveTranscript'
-export type StorageTarget = 'recordings' | 'database'
+export type StorageTarget = 'recordings' | 'database' | 'diagnostics'
+
+export type DiagnosticValue = string | number | boolean | null
+export type DiagnosticDetails = Record<string, DiagnosticValue>
 
 export type CreateRecordingInput = {
   id: string
@@ -67,6 +70,7 @@ export type StorageInfo = {
   userDataDir: string
   recordingsDir: string
   databasePath: string
+  diagnosticsPath: string
   anythingLeavesComputer: boolean
   processing: string
 }

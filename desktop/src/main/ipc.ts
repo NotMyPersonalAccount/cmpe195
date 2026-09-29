@@ -11,7 +11,8 @@ import {
   storageInfo,
   updateRecording
 } from './db'
-import { databasePath, recordingsDir } from './paths'
+import { databasePath, diagnosticsPath, recordingsDir } from './paths'
+import { writeDiagnostic } from './diagnostics'
 import type {
   CreateRecordingInput,
   PreferenceKey,
@@ -39,6 +40,11 @@ function extensionFor(mime: string): string {
 }
 
 export function registerIpc(): void {
+  writeDiagnostic('app.started', { platform: process.platform })
+  ipcMain.on('diagnostics:write', (_event, event: unknown, details: unknown) => {
+    writeDiagnostic(event, details)
+  })
+
   ipcMain.handle('recordings:list', () => listRecordings())
 
   ipcMain.handle('recordings:get', (_event, id: string) => getRecording(requireId(id)))
@@ -107,6 +113,7 @@ export function registerIpc(): void {
   ipcMain.handle('app:reveal-storage', (_event, target: StorageTarget) => {
     if (target === 'database') shell.showItemInFolder(databasePath())
     else if (target === 'recordings') void shell.openPath(recordingsDir())
+    else if (target === 'diagnostics') shell.showItemInFolder(diagnosticsPath())
     else throw new Error('Unknown storage target')
   })
 

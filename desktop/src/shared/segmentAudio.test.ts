@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { findCutPoint, isProbablySilent, splitRecordingAudio } from './segmentAudio'
+import { findCutPoint, isProbablySilent, measureAudio, splitRecordingAudio } from './segmentAudio'
 
 const RATE = 16000
 
@@ -82,5 +82,22 @@ describe('splitRecordingAudio', () => {
 
   it('drops a completely silent recording', () => {
     expect(splitRecordingAudio(build([{ seconds: 10, amplitude: 0 }]), RATE)).toEqual([])
+  })
+})
+
+describe('measureAudio', () => {
+  it('reports duration, level, peak, and voiced coverage without retaining audio', () => {
+    const metrics = measureAudio(
+      build([
+        { seconds: 1, amplitude: 0.1 },
+        { seconds: 1, amplitude: 0 }
+      ]),
+      RATE
+    )
+
+    expect(metrics.audioSeconds).toBe(2)
+    expect(metrics.rms).toBeCloseTo(Math.sqrt(0.005), 4)
+    expect(metrics.peak).toBe(0.1)
+    expect(metrics.voicedPercent).toBe(50)
   })
 })

@@ -16,6 +16,7 @@ import { pipeline } from '@huggingface/transformers'
 import { findCutPoint, isProbablySilent } from '../src/shared/segmentAudio.ts'
 import { extractTasks } from '../src/shared/extractTasks.ts'
 import { cleanTranscriptText } from '../src/shared/cleanTranscript.ts'
+import { SPEECH_MODEL_ID } from '../src/shared/model.ts'
 
 const SAMPLE_RATE = 16000
 const WORKLET_CHUNK = 4096
@@ -111,7 +112,7 @@ async function main(): Promise<void> {
   console.log(`length: ${seconds(samples.length).toFixed(1)}s at ${SAMPLE_RATE} Hz`)
 
   const loadStart = Date.now()
-  const model = (await pipeline('automatic-speech-recognition', 'onnx-community/whisper-tiny.en', {
+  const model = (await pipeline('automatic-speech-recognition', SPEECH_MODEL_ID, {
     dtype: 'q8'
   })) as unknown as Transcriber
   console.log(`model ready in ${((Date.now() - loadStart) / 1000).toFixed(1)}s`)

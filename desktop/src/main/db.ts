@@ -8,7 +8,7 @@ import type {
   RecordingSummary,
   StorageInfo
 } from '@shared/types'
-import { databasePath, existingWasm, recordingsDir } from './paths'
+import { databasePath, diagnosticsPath, existingWasm, recordingsDir } from './paths'
 import { app } from 'electron'
 import { rowToSummary, rowToTask, type RecordingRow, type TaskRow } from '@shared/recordingTransforms'
 
@@ -257,6 +257,7 @@ export function storageInfo(): StorageInfo {
     userDataDir: app.getPath('userData'),
     recordingsDir: recordingsDir(),
     databasePath: databasePath(),
+    diagnosticsPath: diagnosticsPath(),
     anythingLeavesComputer: false,
     processing: 'Audio is transcribed on this computer. Recordings and transcripts are never uploaded.'
   }

@@ -2,6 +2,7 @@
 
 import { env, pipeline } from '@huggingface/transformers'
 import { cleanTranscriptText } from '@shared/cleanTranscript'
+import { SPEECH_MODEL_ID } from '@shared/model'
 
 type Incoming =
   | { type: 'warmup' }
@@ -21,8 +22,6 @@ if (wasm) wasm.numThreads = 1
 let transcriber: Transcriber | null = null
 let loading: Promise<Transcriber> | null = null
 let backend: 'WebGPU' | 'WASM' | null = null
-
-const MODEL_ID = 'onnx-community/whisper-tiny.en'
 
 // One model, one GPU/WASM session: overlapping calls would contend for it and
 // arrive out of order, which for live transcription means scrambled sentences.
@@ -56,7 +55,7 @@ function loadModel(): Promise<Transcriber> {
     if ('gpu' in navigator) {
       postMessage({ type: 'progress', message: 'Preparing the local speech model…' })
       try {
-        transcriber = (await pipeline('automatic-speech-recognition', MODEL_ID, {
+        transcriber = (await pipeline('automatic-speech-recognition', SPEECH_MODEL_ID, {
           device: 'webgpu',
           dtype: {
             encoder_model: 'fp32',
@@ -74,7 +73,7 @@ function loadModel(): Promise<Transcriber> {
     }
 
     if (!transcriber) {
-      transcriber = (await pipeline('automatic-speech-recognition', MODEL_ID, {
+      transcriber = (await pipeline('automatic-speech-recognition', SPEECH_MODEL_ID, {
         device: 'wasm',
         dtype: 'q8',
         progress_callback: onProgress
@@ -108,7 +107,7 @@ async function handle(message: Extract<Incoming, { type: 'transcribe' }>): Promi
         : 'Transcribing on this computer…'
     })
 
-    // whisper-tiny.en is English-only, and transformers.js rejects `language`
+    // The English-only Whisper model rejects `language`
     // or `task` on such a model rather than ignoring them.
     // A Float32Array input is defined by Transformers.js as 16 kHz mono PCM.
     // `sampleRate` remains in the message protocol so malformed callers can be
@@ -128,7 +127,15 @@ async function handle(message: Extract<Incoming, { type: 'transcribe' }>): Promi
       : (result.text ?? '').trim()
     const text = cleanTranscriptText(rawText)
 
-    postMessage({ type: 'done', requestId, text })
+    postMessage({
+      type: 'done',
+      requestId,
+      text,
+      rawChars: rawText.length,
+      rawWords: wordCount(rawText),
+      cleanedChars: text.length,
+      cleanedWords: wordCount(text)
+    })
   } catch (error) {
     const message =
       error instanceof Error
@@ -142,7 +149,7 @@ self.onmessage = (event: MessageEvent<Incoming>) => {
   const data = event.data
   if (data.type === 'warmup') {
     void loadModel()
-      .then(() => postMessage({ type: 'ready', backend }))
+      .then(() => postMessage({ type: 'ready', backend, modelId: SPEECH_MODEL_ID }))
       .catch((error) => {
         postMessage({
           type: 'warmup-error',
@@ -155,4 +162,8 @@ self.onmessage = (event: MessageEvent<Incoming>) => {
     return
   }
   chain = chain.then(() => handle(data))
+}
+
+function wordCount(text: string): number {
+  return text.trim() ? text.trim().split(/\s+/).length : 0
 }

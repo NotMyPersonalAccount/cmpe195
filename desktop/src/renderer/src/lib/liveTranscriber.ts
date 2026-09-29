@@ -1,5 +1,6 @@
-import { findCutPoint, isProbablySilent } from '@shared/segmentAudio'
+import { findCutPoint, isProbablySilent, measureAudio } from '@shared/segmentAudio'
 import { transcribe, warmUpModel } from './transcribe'
+import { logDiagnostic } from './diagnostics'
 
 const SAMPLE_RATE = 16000
 
@@ -67,6 +68,11 @@ export class LiveTranscriber {
     }
     await this.chain
     if (this.failed) throw new Error(this.note ?? 'Live transcription failed')
+    logDiagnostic('live.finished', {
+      segmentCount: this.segments.length,
+      nonEmptySegments: this.segments.filter((segment) => segment.trim()).length,
+      transcriptChars: this.text.length
+    })
     return this.text
   }
 
@@ -89,11 +95,20 @@ export class LiveTranscriber {
     if (this.cancelled) return
     // Dead air still costs a model run and often comes back as a hallucinated
     // phrase, so skip it rather than put it in the transcript.
-    if (isProbablySilent(segment)) return
+    const metrics = measureAudio(segment, SAMPLE_RATE)
+    if (isProbablySilent(segment)) {
+      logDiagnostic('live.segment_skipped', { reason: 'silent', ...metrics })
+      return
+    }
 
     const index = this.segments.length
     this.segments.push('')
     this.queued += 1
+    logDiagnostic('live.segment_queued', {
+      segmentIndex: index,
+      queued: this.queued,
+      ...metrics
+    })
     this.emit()
 
     this.chain = this.chain.then(async () => {
@@ -109,6 +124,12 @@ export class LiveTranscriber {
         )
         this.segments[index] = text.trim()
         this.note = null
+        logDiagnostic('live.segment_result', {
+          segmentIndex: index,
+          transcriptChars: this.segments[index].length,
+          transcriptWords: wordCount(this.segments[index]),
+          empty: this.segments[index].length === 0
+        })
       } catch (error) {
         this.segments[index] = ''
         this.failed = true
@@ -126,6 +147,10 @@ export class LiveTranscriber {
   private emit(): void {
     if (!this.cancelled) this.onUpdate?.(this.state)
   }
+}
+
+function wordCount(text: string): number {
+  return text.trim() ? text.trim().split(/\s+/).length : 0
 }
 
 function concat(left: Float32Array, right: Float32Array): Float32Array {

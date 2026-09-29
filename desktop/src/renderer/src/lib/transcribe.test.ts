@@ -21,11 +21,12 @@ describe('transcribeRecording', () => {
       .mockResolvedValueOnce('')
       .mockResolvedValueOnce('Submit the assignment')
       .mockResolvedValueOnce('by Friday.')
+      .mockResolvedValueOnce('')
 
     await expect(transcribeRecording(samples, undefined, run)).resolves.toBe(
       'Submit the assignment by Friday.'
     )
-    expect(run).toHaveBeenCalledTimes(3)
+    expect(run).toHaveBeenCalledTimes(4)
     expect(run.mock.calls.slice(1).every((call) => call[2] === true)).toBe(true)
   })
 

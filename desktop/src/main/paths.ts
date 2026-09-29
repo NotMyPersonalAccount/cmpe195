@@ -13,6 +13,11 @@ export function databasePath(): string {
   return join(app.getPath('userData'), 'catch.sqlite')
 }
 
+export function diagnosticsPath(): string {
+  mkdirSync(app.getPath('userData'), { recursive: true })
+  return join(app.getPath('userData'), 'catch-debug.log')
+}
+
 export function wasmCandidates(): string[] {
   return [
     join(process.resourcesPath, 'sql-wasm.wasm'),

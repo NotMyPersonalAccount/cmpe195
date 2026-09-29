@@ -1,5 +1,6 @@
 import workletUrl from '../workers/pcm-worklet.js?url'
 import { resampleChunk } from './audio'
+import { logDiagnostic } from './diagnostics'
 
 const TARGET_RATE = 16000
 
@@ -22,6 +23,7 @@ export class MicRecorder {
   onTick?: (elapsedMs: number) => void
   /** Called with 16 kHz mono samples while recording, for live transcription. */
   onPcm?: (samples: Float32Array) => void
+  onLiveUnavailable?: (message: string) => void
 
   async start(): Promise<void> {
     this.chunks = []
@@ -34,6 +36,14 @@ export class MicRecorder {
         autoGainControl: true,
         channelCount: 1
       }
+    })
+    const settings = this.media.getAudioTracks()[0]?.getSettings()
+    logDiagnostic('recorder.media_ready', {
+      sampleRate: settings?.sampleRate ?? null,
+      channelCount: settings?.channelCount ?? null,
+      echoCancellation: settings?.echoCancellation ?? null,
+      noiseSuppression: settings?.noiseSuppression ?? null,
+      autoGainControl: settings?.autoGainControl ?? null
     })
 
     const mime = pickMime()
@@ -50,7 +60,13 @@ export class MicRecorder {
     try {
       await this.startTap()
       this.speechDetectionAvailable = true
-    } catch {
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? `Live transcript unavailable: ${error.message}`
+          : 'Live transcript unavailable. The recording will still be saved.'
+      logDiagnostic('recorder.tap_failed', { message })
+      this.onLiveUnavailable?.(message)
       this.onPcm = undefined
     }
 
@@ -88,9 +104,19 @@ export class MicRecorder {
 
     this.audioContext = context
     this.tap = tap
+    logDiagnostic('recorder.tap_ready', {
+      contextSampleRate: context.sampleRate,
+      targetSampleRate: TARGET_RATE
+    })
   }
 
-  stop(): Promise<{ blob: Blob; durationMs: number; mime: string; hasSpeech: boolean | null }> {
+  stop(): Promise<{
+    blob: Blob
+    durationMs: number
+    mime: string
+    hasSpeech: boolean | null
+    speechMs: number
+  }> {
     const recorder = this.recorder
     if (!recorder || recorder.state === 'inactive') {
       this.cleanup()
@@ -107,8 +133,9 @@ export class MicRecorder {
           try {
             const blob = new Blob(this.chunks, { type: mime })
             const hasSpeech = this.speechDetectionAvailable ? this.speechMs >= 300 : null
+            const speechMs = Math.round(this.speechMs)
             this.cleanup()
-            resolve({ blob, durationMs, mime, hasSpeech })
+            resolve({ blob, durationMs, mime, hasSpeech, speechMs })
           } catch (error) {
             this.cleanup()
             reject(error)

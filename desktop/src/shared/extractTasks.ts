@@ -23,15 +23,63 @@ export type ExtractedTask = {
   deadlineLabel: string | null
 }
 
+export type TaskExtractionDiagnostics = {
+  inputChars: number
+  cleanedChars: number
+  unitCount: number
+  scheduledCandidates: number
+  acceptedCandidates: number
+  rejectedShort: number
+  rejectedNoAction: number
+  rejectedLowScore: number
+  correctionUnits: number
+  correctionsApplied: number
+  dedupedCount: number
+  taskCount: number
+}
+
 export function extractTasks(transcript: string, recordedAt: Date = new Date()): ExtractedTask[] {
+  return runExtraction(transcript, recordedAt).tasks
+}
+
+export function diagnoseTaskExtraction(
+  transcript: string,
+  recordedAt: Date = new Date()
+): TaskExtractionDiagnostics {
+  return runExtraction(transcript, recordedAt).diagnostics
+}
+
+function runExtraction(
+  transcript: string,
+  recordedAt: Date
+): { tasks: ExtractedTask[]; diagnostics: TaskExtractionDiagnostics } {
   const cleanedTranscript = cleanTranscriptText(transcript)
   const found: ExtractedTask[] = []
+  const units = splitUnits(cleanedTranscript)
+  const diagnostics: TaskExtractionDiagnostics = {
+    inputChars: transcript.length,
+    cleanedChars: cleanedTranscript.length,
+    unitCount: units.length,
+    scheduledCandidates: 0,
+    acceptedCandidates: 0,
+    rejectedShort: 0,
+    rejectedNoAction: 0,
+    rejectedLowScore: 0,
+    correctionUnits: 0,
+    correctionsApplied: 0,
+    dedupedCount: 0,
+    taskCount: 0
+  }
   let correctionWindow = 0
-  for (const unit of splitUnits(cleanedTranscript)) {
+  for (const unit of units) {
     const cleaned = cleanDescription(unit)
-    if (cleaned.split(/\s+/).length < 2) continue
+    if (cleaned.split(/\s+/).length < 2) {
+      diagnostics.rejectedShort += 1
+      continue
+    }
     const scheduled = extractScheduledTasks(cleaned, recordedAt)
     if (scheduled.length > 0) {
+      diagnostics.scheduledCandidates += scheduled.length
       found.push(...scheduled)
       correctionWindow = 0
       continue
@@ -40,7 +88,10 @@ export function extractTasks(transcript: string, recordedAt: Date = new Date()):
     const hasCorrectionCue = CORRECTION_CUE.test(cleaned)
     const hasTaskVerb = TASK_VERBS.test(cleaned)
 
-    if (hasCorrectionCue && found.length > 0) correctionWindow = 4
+    if (hasCorrectionCue && found.length > 0) {
+      diagnostics.correctionUnits += 1
+      correctionWindow = 4
+    }
 
     // Apply correction-only phrases immediately to the task that preceded
     // them. Keeping this sequential prevents a later assignment from receiving
@@ -49,9 +100,11 @@ export function extractTasks(transcript: string, recordedAt: Date = new Date()):
       const previousIndex = found.length - 1
       if (deadline) {
         found[previousIndex] = applyDeadlineCorrection(found[previousIndex], deadline)
+        diagnostics.correctionsApplied += 1
         correctionWindow = 0
       } else if (negatesCurrentDeadline(cleaned, found[previousIndex].deadlineLabel)) {
         found[previousIndex] = removeDeadline(found[previousIndex])
+        diagnostics.correctionsApplied += 1
         correctionWindow = 0
       } else {
         correctionWindow -= 1
@@ -59,7 +112,15 @@ export function extractTasks(transcript: string, recordedAt: Date = new Date()):
       continue
     }
 
-    if (scoreUnit(cleaned, Boolean(deadline)) < 3) continue
+    const score = scoreUnit(cleaned, Boolean(deadline))
+    if (!Number.isFinite(score)) {
+      diagnostics.rejectedNoAction += 1
+      continue
+    }
+    if (score < 3) {
+      diagnostics.rejectedLowScore += 1
+      continue
+    }
     found.push({
       description: capitalize(cleaned),
       deadlineIso: deadline?.iso ?? null,
@@ -67,7 +128,11 @@ export function extractTasks(transcript: string, recordedAt: Date = new Date()):
     })
     correctionWindow = 0
   }
-  return dedupe(found).slice(0, 25)
+  const tasks = dedupe(found).slice(0, 25)
+  diagnostics.acceptedCandidates = found.length
+  diagnostics.dedupedCount = Math.max(0, found.length - tasks.length)
+  diagnostics.taskCount = tasks.length
+  return { tasks, diagnostics }
 }
 
 function applyDeadlineCorrection(task: ExtractedTask, deadline: Deadline): ExtractedTask {
@@ -123,15 +188,19 @@ function escapeRegExp(value: string): string {
 }
 
 function extractScheduledTasks(text: string, recordedAt: Date): ExtractedTask[] {
+  const normalizedText = text.replace(
+    /[,;]\s*(?:oh,?\s*)?(?:so\s+)?(?=(?:(?:the|an?|your|another)\s+)?(?:quiz|exam|test|midterm|final|presentation|assignment|homework|project|paper|essay|report|lab|problem set|worksheet)\s+)/gi,
+    ' and '
+  )
   const pattern = new RegExp(
     `(^|\\b(and|plus|also|in)\\s+)(?:(?:i|we)\\s+(?:have|got)\\s+|there(?:'s| is)\\s+)?(?:(?:the|an?|your|another)\\s+)?${SCHEDULED_NOUN}\\s+(?:is\\s+(?:on\\s+)?|scheduled\\s+(?:on\\s+)?|on\\s+|by\\s+)${SPOKEN_DATE}`,
     'gi'
   )
   const tasks: ExtractedTask[] = []
 
-  for (const match of text.matchAll(pattern)) {
+  for (const match of normalizedText.matchAll(pattern)) {
     const separator = match[2]?.toLowerCase()
-    // Tiny Whisper occasionally hears "and a midterm" as "in a midterm".
+    // Whisper occasionally hears "and a midterm" as "in a midterm".
     // Only accept that repair after a clear scheduled item in the same unit,
     // so ordinary phrases such as "worked in a project on Friday" stay notes.
     if (separator === 'in' && tasks.length === 0) continue

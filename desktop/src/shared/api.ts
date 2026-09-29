@@ -1,5 +1,6 @@
 import type {
   CreateRecordingInput,
+  DiagnosticDetails,
   Recording,
   RecordingSummary,
   PreferenceKey,
@@ -20,4 +21,5 @@ export type CatchApi = {
   storageInfo: () => Promise<StorageInfo>
   revealStorage: (target: StorageTarget) => Promise<void>
   requestMicAccess: () => Promise<boolean>
+  writeDiagnostic: (event: string, details: DiagnosticDetails) => void
 }

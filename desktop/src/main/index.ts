@@ -4,6 +4,7 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { initDb } from './db'
 import { registerIpc } from './ipc'
+import { writeDiagnostic } from './diagnostics'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -32,6 +33,16 @@ function createWindow(): void {
 
   mainWindow.on('closed', () => {
     mainWindow = null
+  })
+
+  mainWindow.on('unresponsive', () => {
+    writeDiagnostic('renderer.unresponsive', {})
+  })
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    writeDiagnostic('renderer.gone', {
+      reason: details.reason,
+      exitCode: details.exitCode
+    })
   })
 
   if (is.dev) {

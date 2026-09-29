@@ -1,10 +1,10 @@
-import type { StorageInfo } from '@shared/types'
+import type { StorageInfo, StorageTarget } from '@shared/types'
 import { useEffect, useRef } from 'react'
 
 type Props = {
   info: StorageInfo | null
   onClose: () => void
-  onReveal: (target: 'recordings' | 'database') => void
+  onReveal: (target: StorageTarget) => void
 }
 
 export function PrivacyPanel({ info, onClose, onReveal }: Props): React.JSX.Element {
@@ -57,6 +57,18 @@ export function PrivacyPanel({ info, onClose, onReveal }: Props): React.JSX.Elem
             <dd>
               Downloaded once from Hugging Face into this app’s local cache, then reused offline. Your
               audio is processed here, not on their servers.
+            </dd>
+          </div>
+          <div>
+            <dt>Debug log</dt>
+            <dd>
+              {info?.diagnosticsPath ?? 'Application data / catch-debug.log'}
+              {info ? (
+                <button type="button" className="linkish" onClick={() => onReveal('diagnostics')}>
+                  Show log
+                </button>
+              ) : null}
+              <br />Contains timing, audio-level, model, and task-detection counts—not transcript text.
             </dd>
           </div>
           <div>

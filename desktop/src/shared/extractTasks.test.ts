@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { extractTasks } from './extractTasks'
+import { diagnoseTaskExtraction, extractTasks } from './extractTasks'
 
 const tuesday = new Date(2026, 8, 15, 10, 53, 0)
 
@@ -74,8 +74,32 @@ describe('extractTasks', () => {
     ])
   })
 
+  it('keeps a scheduled task after a comma and spoken filler', () => {
+    const tasks = extractTasks(
+      'I have a quiz on Wednesday and a midterm on Thursday, oh, so another assignment on Saturday.',
+      tuesday
+    )
+
+    expect(tasks.map((task) => task.description)).toEqual([
+      'Study for the quiz by Wednesday',
+      'Study for the midterm by Thursday',
+      'Complete the assignment by Saturday'
+    ])
+  })
+
   it('does not treat ordinary work in a dated project as an assigned task', () => {
     expect(extractTasks('I worked in a project on Friday.', tuesday)).toEqual([])
+  })
+
+  it('reports why a transcript produced no tasks without logging its text', () => {
+    const diagnostics = diagnoseTaskExtraction(
+      "Hello, hello, I don't know how much. I'm checking the label. She's not a good deal.",
+      tuesday
+    )
+
+    expect(diagnostics.taskCount).toBe(0)
+    expect(diagnostics.unitCount).toBe(3)
+    expect(diagnostics.rejectedNoAction).toBe(3)
   })
 
   it('keeps deadline statements when the due language is explicit', () => {

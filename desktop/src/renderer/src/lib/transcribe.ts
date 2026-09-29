@@ -1,14 +1,22 @@
 import { logDiagnostic } from './diagnostics'
 import { cleanTranscriptText } from '@shared/cleanTranscript'
-import { splitRecordingAudio } from '@shared/segmentAudio'
+import { measureAudio, splitRecordingAudio } from '@shared/segmentAudio'
 
 export type TranscribeProgress = (message: string) => void
 
 type WorkerResponse =
   | { type: 'progress'; message: string }
-  | { type: 'ready'; backend: 'WebGPU' | 'WASM' }
+  | { type: 'ready'; backend: 'WebGPU' | 'WASM'; modelId: string }
   | { type: 'warmup-error'; message: string }
-  | { type: 'done'; requestId: number; text: string }
+  | {
+      type: 'done'
+      requestId: number
+      text: string
+      rawChars: number
+      rawWords: number
+      cleanedChars: number
+      cleanedWords: number
+    }
   | { type: 'error'; requestId: number; message: string }
 
 let worker: Worker | null = null
@@ -44,7 +52,7 @@ function ensureWorker(): Worker {
     }
     if (data.type === 'ready') {
       workerReady = true
-      logDiagnostic('model.ready', { backend: data.backend })
+      logDiagnostic('model.ready', { backend: data.backend, modelId: data.modelId })
       warmups.forEach((item) => item.resolve())
       warmups.clear()
       return
@@ -64,7 +72,11 @@ function ensureWorker(): Worker {
         mode: waiter.live ? 'live' : 'full',
         audioSeconds: Number(waiter.audioSeconds.toFixed(1)),
         elapsedMs: Date.now() - waiter.startedAt,
-        transcriptChars: data.text.length
+        transcriptChars: data.text.length,
+        rawChars: data.rawChars,
+        rawWords: data.rawWords,
+        cleanedChars: data.cleanedChars,
+        cleanedWords: data.cleanedWords
       })
       waiter.resolve(data.text)
     } else {
@@ -106,6 +118,11 @@ export function transcribe(
 ): Promise<string> {
   const id = ++requestId
   const target = ensureWorker()
+  logDiagnostic('transcription.requested', {
+    requestId: id,
+    mode: live ? 'live' : 'full',
+    ...measureAudio(audio, 16000)
+  })
 
   return new Promise((resolve, reject) => {
     pending.set(id, {

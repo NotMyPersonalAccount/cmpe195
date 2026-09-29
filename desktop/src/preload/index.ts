@@ -1,6 +1,12 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { CatchApi } from '@shared/api'
-import type { CreateRecordingInput, PreferenceKey, StorageTarget, UpdateRecordingInput } from '@shared/types'
+import type {
+  CreateRecordingInput,
+  DiagnosticDetails,
+  PreferenceKey,
+  StorageTarget,
+  UpdateRecordingInput
+} from '@shared/types'
 
 const api: CatchApi = {
   listRecordings: () => ipcRenderer.invoke('recordings:list'),
@@ -13,7 +19,10 @@ const api: CatchApi = {
   setSetting: (key: PreferenceKey, value: string) => ipcRenderer.invoke('settings:set', key, value),
   storageInfo: () => ipcRenderer.invoke('app:storage'),
   revealStorage: (target: StorageTarget) => ipcRenderer.invoke('app:reveal-storage', target),
-  requestMicAccess: () => ipcRenderer.invoke('app:mic-access')
+  requestMicAccess: () => ipcRenderer.invoke('app:mic-access'),
+  writeDiagnostic: (event: string, details: DiagnosticDetails) => {
+    ipcRenderer.send('diagnostics:write', event, details)
+  }
 }
 
 contextBridge.exposeInMainWorld('api', api)

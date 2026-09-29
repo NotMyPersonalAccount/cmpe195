@@ -5,6 +5,13 @@ export type SegmentOptions = {
   silenceRms?: number
 }
 
+export type AudioMetrics = {
+  audioSeconds: number
+  rms: number
+  peak: number
+  voicedPercent: number
+}
+
 /**
  * Picks where to cut a growing buffer of live audio into a transcribable chunk.
  *
@@ -21,8 +28,8 @@ export function findCutPoint(
   options: SegmentOptions = {}
 ): number {
   const {
-    minSeconds = 8,
-    maxSeconds = 20,
+    minSeconds = 5,
+    maxSeconds = 15,
     windowSeconds = 0.25,
     silenceRms = 0.015
   } = options
@@ -64,6 +71,39 @@ function windowRms(samples: Float32Array, start: number, length: number): number
 export function isProbablySilent(samples: Float32Array, silenceRms = 0.008): boolean {
   if (samples.length === 0) return true
   return windowRms(samples, 0, samples.length) <= silenceRms
+}
+
+export function measureAudio(samples: Float32Array, sampleRate: number): AudioMetrics {
+  if (samples.length === 0) {
+    return { audioSeconds: 0, rms: 0, peak: 0, voicedPercent: 0 }
+  }
+
+  let sum = 0
+  let peak = 0
+  for (const sample of samples) {
+    sum += sample * sample
+    peak = Math.max(peak, Math.abs(sample))
+  }
+
+  const windowSize = Math.max(1, Math.floor(sampleRate * 0.1))
+  let windows = 0
+  let voiced = 0
+  for (let offset = 0; offset < samples.length; offset += windowSize) {
+    const length = Math.min(windowSize, samples.length - offset)
+    if (windowRms(samples, offset, length) >= 0.008) voiced += 1
+    windows += 1
+  }
+
+  return {
+    audioSeconds: rounded(samples.length / sampleRate, 2),
+    rms: rounded(Math.sqrt(sum / samples.length), 5),
+    peak: rounded(peak, 5),
+    voicedPercent: rounded((voiced / windows) * 100, 1)
+  }
+}
+
+function rounded(value: number, digits: number): number {
+  return Number(value.toFixed(digits))
 }
 
 /** Splits a saved recording at the same pause-aware boundaries used live. */
